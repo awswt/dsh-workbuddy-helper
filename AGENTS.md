@@ -109,6 +109,7 @@ node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin
 14. 技能目录不在 system prompt 里：它是 `@deepseek-ai/dsh-tool-skill` 注入的**独立 user 消息** `<available_skills>`。断言技能可见性别只 grep system。
 15. `mcp_connector.json` 在 `$DSH_HOME/storages/`，不在 profile 下；`tables.connections` 与 `tables.grants` 是 key → record 的 map，不是数组。
 16. Windows 上 `bz e` 解 7z 会静默成功但不出文件；用自带 `tar -xf app-64.7z -C <dir> <pattern>`（支持 glob，但**不支持** `--wildcards`）。
+17. 凭据跟着 `DSH_HOME` 走：隔离 home 里没有 `workbuddy-vault/`，portal 的三个动作会统一报 `WORKBUDDY_HELPER_PORTAL_AUTH_REQUIRED`。要在隔离环境里跑端到端，先把真实 home 的 `workbuddy-vault/` 复制过去（4 个账号文件），别去改代码。
 
 ## 8. 边界
 

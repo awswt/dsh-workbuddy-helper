@@ -170,6 +170,35 @@ stderr 里出现 `Amap Maps MCP Server running on stdio`——连接器是被宿
 **注意版本差异**：GitHub 上 0.5.0 的 `connector` action 只返回 `status()`，没有目录/状态/连接能力；
 本报告 §4.2–§4.6 的全部连接器结论属于工作树 0.6.0（未提交）。两者不可混用同一份证据。
 
+### 4.9 GitHub 安装最新版（0.6.1 @ `761ec32`）—— 三市场同时进会话
+
+改造完成并推送后，重新走一遍"从 GitHub 装"这条真实路径，覆盖本轮新增的能力（连接器管理页桥接、技能真实安装）：
+
+```powershell
+$env:DSH_HOME="E:\DSH\workspace\migrate\.workbuddy\probe\dshhome"
+node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin.js" `
+  plugin --profile wbhelper-gh061 add `
+  "https://codeload.github.com/awswt/dsh-workbuddy-helper/tar.gz/761ec326c9d1f5c31301c528e78a198e86dd8f9f"
+# Packages: +9, Done in 2.7s；装进去的 package.json version = 0.6.1
+```
+
+内容新鲜度用特征串验证（同版本号不等于同内容，见 AGENTS.md §6）：`lib/connectors.js` 命中 `readSharedConnectorState|connector-ui` 3 处、`lib/skill-install.js` 命中 `projectRootOf|integrity check` 4 处。
+
+探针（假模型 + 真 headless 会话，`PROBE_PORT=9904 PROFILE=wbhelper-gh061`，6 步计划：connector list → skill-market → skills install → skills → expert → skills）：
+
+| 链路 | 证据 | 判定 |
+| --- | --- | --- |
+| 工具下发 | `tools=27`，`workbuddy_helper` 参数含 `action/skillAction/skillId/page/pageSize/expertId/connectorAction/connectorId/token/query/mode/names/expertNames` | PASS |
+| 连接器 | `catalogTotal:134`、8 分类、`connectorUi:{available:true,...}`、`accounts:{accountCount:4,usableAccountCount:4}` | PASS |
+| 技能市场 | `{total:3437, source:'portal', items:[{id:'skill_2095395851789164544', slug:'docx', name:'Word 文档处理', version:'1.0.0'}]}` | PASS |
+| 技能真实安装 | `{ok:true, installed:{slug:'docx', path:'E:\DSH\workspace\migrate\.dsh\skills\docx', ...}}`，5 文件 22KB | PASS |
+| 技能进会话 | 下一次 `action=skills` 返回 `globalMode:'all'`，9 条技能且 `hasDocx:true`（`agent-browser, ai-research-explore, docx, maoying-*`） | PASS |
+| 专家进会话 | `expertBlock=true expert=程枢`，`applied:true`（`ai-agent-engineer@1.0.0`），后续请求 system 含专家正文 | PASS |
+
+一条环境坑：隔离 `DSH_HOME` 里没有 `workbuddy-vault/`，所以首次跑探针时 portal 三个动作全部返回
+`WORKBUDDY_HELPER_PORTAL_AUTH_REQUIRED`。把真实 home 的 vault 复制进隔离 home（4 个账号文件）后立刻通过——
+这不是代码缺陷，而是"凭据跟着 `DSH_HOME` 走"的正确行为，已记入 AGENTS.md 陷阱 17。
+
 
 ---
 
