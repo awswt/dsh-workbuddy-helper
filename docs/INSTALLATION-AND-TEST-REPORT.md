@@ -349,7 +349,15 @@ tool_result:
 
 未执行：headless profile 没有 `DEEPSEEK_API_KEY`。工具管线、提示段、技能目录用本地 Messages 兼容假模型验证，不消耗真实额度。
 
-### 5.12 按 dsh-armory 文档复刻连接器页（v0.4.8）
+### 5.13 陈旧路由导致专家切换失效（v0.4.9）
+
+用户更新后仍见 `cannot get required service "agents" in inactive context` 且专家点「使用」无响应。定位：旧版本注册的 webServer 路由残留在运行中的进程，新的 client 命中了绑定在已销毁 ctx 上的旧 handler。
+
+v0.4.6 的 disposer 只保护**之后**的热更新；对进程里已经存在的旧路由，v0.4.9 在注册前按 `/dsh-workbuddy-helper` 前缀从 `webServer.exact` 直接剔除陈旧条目（不动其他插件路由），并保留双 disposer。另修复选择专家后胶囊不刷新的 UI 问题。
+
+验证：28/28 单测（含陈旧路由自愈用例）；Web profile 切换专家 `SELECT_RESP 200`、`BANNER none`、`PILL 会话辅助 卖得好`。注意：用户当前进程需要**完整重启 DSH 一次**才会加载到新代码；之后热更新不会再残留。
+
+
 
 按 dsh-armory README 的连接器市场契约（316+ 个官方连接器、可装性/真实连接态、401 就地重新授权、不代填 token）改造本插件的连接器页：
 

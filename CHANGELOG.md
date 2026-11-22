@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.9
+
+- 修复：热更新后残留的旧路由在进程内继续服务导致 `cannot get required service "agents" in inactive context` 且专家切换无响应；新版本注册时主动清理本插件前缀的陈旧路由（不动其他插件），并保留双重 disposer。
+- 修复：选择专家后胶囊按钮不立即刷新。
+
 ## 0.4.8
 
 - 修复：dsh-armory 的 `remote.mcpManager` 晚于本插件注册，改为按需解析，避免卡片页因加载顺序退回旧模式。

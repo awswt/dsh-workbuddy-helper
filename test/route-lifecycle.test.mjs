@@ -73,3 +73,38 @@ test('web routes are replaced, not leaked, when the plugin reloads', () => {
   assert.equal(routes.size, 0, 'plugin unload must release every registered route')
   assert.ok(scopedEffects.length > 0, 'scoped effect should also be registered')
 })
+
+test('reload evicts stale routes left by older plugin versions', () => {
+  const routes = new Map()
+  const stale = { path: '/dsh-workbuddy-helper/state', handler() {} }
+  routes.set('/dsh-workbuddy-helper/state', stale)
+  routes.set('/other-plugin/route', { handler() {} })
+  const ctx = {
+    inject(names, callback) {
+      callback({
+        webServer: {
+          exact: routes,
+          register(route) {
+            if (routes.has(route.path)) throw new Error(`duplicate ${route.path}`)
+            routes.set(route.path, route)
+            return () => routes.delete(route.path)
+          },
+        },
+        effect() {},
+      })
+    },
+    effect() {},
+    logger: { info() {}, warn() {} },
+  }
+  const deps = {
+    sessions: { async panelState() { return {} }, disabledOf: () => new Set() },
+    market: { async marketSize() { return 0 }, async categories() { return [] } },
+    bundles: {},
+    connector: { async status() { return {} } },
+    portal: { async listBuddyConnectors() { return { total: 0, items: [] } } },
+    connectors: { connectorViews: async () => ({ items: [], total: 0 }), catalog: async () => ({ items: [], total: 0 }), disabledOf: () => new Set() },
+  }
+  registerWebUi(ctx, deps)
+  assert.notEqual(routes.get('/dsh-workbuddy-helper/state'), stale, 'stale handler must be replaced')
+  assert.ok(routes.has('/other-plugin/route'), 'foreign routes must remain untouched')
+})
