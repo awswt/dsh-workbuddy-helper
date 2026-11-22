@@ -528,11 +528,27 @@ async function main() {
         verbose: options.verbose,
       })
       report.steps.push({ step: 'install', ...installed })
-      checks.pass('plugin installs', `exit ${installed.code}`) && null
-      if (installed.code !== 0) {
-        checks.fail('plugin installs', `exit ${installed.code}: ${installed.stderr.slice(-400)}`)
+      // `dsh plugin add` returns a nonzero exit even when pnpm finished — it writes
+      // "initialized profile …" to stderr and the wrapper treats any stderr as
+      // failure. Trusting the exit code here produced a false negative on a real
+      // successful install, so the on-disk package is the authority instead.
+      const installedPkg = readJsonFile(
+        path.join(profileDir, 'node_modules', 'dsh-workbuddy-helper', 'package.json'),
+      )
+      if (installedPkg === null) {
+        const why = /ERR_PNPM_GIT_RESOLVE_FAILED|Could not connect to|ETIMEDOUT|ECONNRESET/.test(installed.stderr)
+          ? 'the network could not reach GitHub; retry, or run with --source local'
+          : installed.stderr.slice(-400)
+        checks.fail('plugin installs', `nothing at ${profileDir}/node_modules/dsh-workbuddy-helper (exit ${installed.code}): ${why}`)
         report.failed = true
         return
+      }
+      checks.pass(
+        'plugin installs',
+        `v${installedPkg.version} on disk (cli exit ${installed.code}${installed.code === 0 ? '' : ', ignored: pnpm still finished'})`,
+      )
+      if (installedPkg.version !== readJsonFile(path.join(REPO, 'package.json'))?.version) {
+        warn(`installed ${installedPkg.version} but the working tree is ${readJsonFile(path.join(REPO, 'package.json'))?.version}`)
       }
       const configured = await configureProfile(profileDir)
       report.steps.push({ step: 'configure', ...configured })
