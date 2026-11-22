@@ -197,7 +197,7 @@ categories      -> categories / categoryId
 npm test
 ```
 
-结果：**26/26 通过**。新增覆盖：
+结果：**27/27 通过**。新增覆盖：
 
 - 在线市场字段映射；
 - `PortalMarket` 的 URL、Bearer 头、请求体、`get-by-ids`、分类；
@@ -349,7 +349,22 @@ tool_result:
 
 未执行：headless profile 没有 `DEEPSEEK_API_KEY`。工具管线、提示段、技能目录用本地 Messages 兼容假模型验证，不消耗真实额度。
 
-### 5.10 第三轮：会话辅助更名与 WorkBuddy 市场（v0.4.5）
+### 5.11 热更新残留路由事故（v0.4.6）
+
+用户更新后反馈：面板常驻 `cannot get required service "agents" in inactive context`、专家切换无响应、技能市场仍返回 404。
+
+根因不是 API 或 404 本身，而是 `webServer.register()` 返回的 disposer 被丢弃：插件热更新时旧 fiber 被销毁，但共享 webServer 上的旧路由仍在；浏览器拿到的是新 client bundle，命中的却是旧 handler（旧会话管理器的 `ctx.agents` 已失效 → 报错；旧路由表没有 skill-market → 404）。
+
+修复：
+
+1. 路由注册全部收集 disposer；作用域与插件根 ctx 双重 effect 在销毁时释放。
+2. 重新注册前先释放上一轮路由，避免 duplicate 异常。
+3. 移除 `ctx.get('agents')` 的“保险扫描”，会话管理器对 `agents` 的读取加防御性封装。
+4. 连接器市场条目由“了解 → GitHub”改为“复制 ID”，并显示 `is_connected`。
+
+验证：`npm test` 27/27（新增路由生命周期测试：二次注册不残留、卸载后路由表清空）；Web profile 冷启动 UI 冒烟无错误，热更新后 `/connectors` 与 `/skill-market` 仍返回 workbuddy 数据源。
+
+
 
 按用户反馈修复四项：
 

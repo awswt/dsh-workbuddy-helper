@@ -21,11 +21,13 @@ DeepSeek Harness 插件：在当前会话内选择、切换、移除专家与技
 
 ![技能市场](docs/ui-15-skill-market.png)
 
-**连接器**：上半区是本机连接器插件（如 dsh-windows-mcp），开关只影响当前会话的工具；下半区「连接器市场」从 WorkBuddy 连接器市场拉取（支持名称/描述搜索），未登录时退回本地快照。
+**连接器**：上半区是本机连接器插件（如 dsh-windows-mcp），开关只影响当前会话的工具；下半区「连接器市场」从 WorkBuddy 连接器市场拉取（支持名称/描述搜索），显示来源图标与「已连接」状态，操作按钮为「复制 ID」（精确复制连接器 ID，不再误跳 GitHub）；未登录时退回本地快照。市场连接器的授权由 WorkBuddy 客户端管理，已连接后其工具即可在本会话使用。
 
 ![连接器市场](docs/ui-14-connector-market.png)
 
 深色模式：主按钮等控件使用单色反色方案，两个主题都可读。
+
+> 更新插件后请**完全重启 DSH**（不是只关闭会话）。插件热更新时若旧 webServer 路由未释放，会出现 `cannot get required service "agents" in inactive context`、专家切换无响应、技能市场 404。v0.4.6 起路由会随插件上下文释放，但当前进程里已残留的旧路由只有重启能清除。
 
 面板由同源的 `/dsh-workbuddy-helper/*` JSON 路由驱动，不启动额外端口，也不把 token 暴露给浏览器。
 

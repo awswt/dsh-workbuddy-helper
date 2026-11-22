@@ -683,6 +683,11 @@ POST /dsh-workbuddy-helper/off      {sessionId}
 - 鉴权细节：账号令牌可能带 `www.codebuddy.cn` 域，市场请求一律落 www.workbuddy.cn（resolveAuth 不再用令牌域覆盖基址）。
 
 
+### 8.11 webServer 路由生命周期
+
+`webServer.register()` 返回 disposer，必须随插件 fiber / 注入作用域一起释放。热更新后共享 webServer 仍在，若旧路由残留，新 client 会命中绑定在失效 ctx 上的旧 handler，表现为 agents 服务错误、专家切换失效与新路由 404。注册时收集 disposer，`ctx.effect` 与 scoped effect 双保险；重注册前先清理。不要从插件根 ctx 调用 `ctx.get('agents')` 做兜底扫描。
+
+
 ## 9. 配置项
 
 ```yaml
@@ -1153,4 +1158,4 @@ v0 已实现：`workbuddy_helper` 工具、`/workbuddy-helper` 命令、在线�
 
 v0 未实现：Web 输入区 UI、Typert 远程服务、专家市场分页 UI、图片头像展示。它们不影响命令/工具路径，后续按设计文档第 10 节补齐。
 
-验证状态：`npm test` 26/26 通过；在线市场 `total_count=10000`、16 个分类；`ex_QvM298ih8T8g`（REA 逆向功能分析专家 / 软件逆向分析工程师）详情与 ZIP 包解析通过；快照 429 条仍可兜底；输入区 Web UI 已在 Web profile 用 Playwright 验证（三页签、技能搜索、专家切换、技能保存、连接器开关与目录搜索、胶囊状态、深色主按钮对比度）。未跑真实模型调用，安装后需按 15.2 第 1 步做 spike。
+验证状态：`npm test` 27/27 通过；在线市场 `total_count=10000`、16 个分类；`ex_QvM298ih8T8g`（REA 逆向功能分析专家 / 软件逆向分析工程师）详情与 ZIP 包解析通过；快照 429 条仍可兜底；输入区 Web UI 已在 Web profile 用 Playwright 验证（三页签、技能搜索、专家切换、技能保存、连接器开关与目录搜索、胶囊状态、深色主按钮对比度）。未跑真实模型调用，安装后需按 15.2 第 1 步做 spike。
