@@ -477,6 +477,6 @@ main
 54abc51 feat: read the live WorkBuddy expert market with snapshot fallback
 ```
 
-安装包：`dist/dsh-workbuddy-helper-0.2.7.tgz`（本地产物，54 KB，未提交）。
+安装包：`dist/dsh-workbuddy-helper-0.2.7.tgz`（本地产物，68 KB，未提交）。
 
 在线市场代码提交为 `54abc51`，输入区面板提交为 `2c84660`；本报告的后续文档提交在其之后。
