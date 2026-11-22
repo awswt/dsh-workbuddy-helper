@@ -309,7 +309,43 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-workbuddy-helper-0.1.0.
     authMode: auto
 ```
 
-### 5.6 真实模型
+### 5.6 GitHub 安装后的在线市场验证
+
+```bash
+dsh plugin --profile workbuddy-helper-gh add \
+  git+ssh://git@github.com/awswt/dsh-workbuddy-helper.git
+dsh --profile workbuddy-helper-gh --dump-config | grep -A 6 workbuddy-helper
+```
+
+组合为：
+
+```yaml
+- id: workbuddy-helper
+  name: dsh-workbuddy-helper
+  config:
+    enabled: true
+    marketMode: auto
+    authMode: auto
+    portalBaseUrl: https://www.workbuddy.cn
+```
+
+在同一 profile 上跑假模型市场调用：
+
+```text
+EXIT 0
+STDOUT: GITHUB_MARKET_OK
+tool_result:
+  "source": "portal"
+  "marketTotal": 10000
+  "matchedTotal": 5
+  "items[0].id": "ex_QvM298ih8T8g"
+  "items[0].profession": "软件逆向分析工程师"
+  "items[0].installed": true
+```
+
+说明 GitHub 仓库里的最新代码可直接安装并访问在线市场，不依赖本地工作区。
+
+### 5.7 真实模型
 
 未执行：headless profile 没有 `DEEPSEEK_API_KEY`。工具管线、提示段、技能目录用本地 Messages 兼容假模型验证，不消耗真实额度。
 
@@ -378,3 +414,17 @@ test/core.test.mjs     # 13 项单测
 test/host-integration.mjs
 cordis.patch.yml       # marketMode/authMode/portalBaseUrl 默认值
 ```
+
+---
+
+## 9. 仓库状态
+
+```text
+git@github.com:awswt/dsh-workbuddy-helper.git
+main
+54abc51 feat: read the live WorkBuddy expert market with snapshot fallback
+```
+
+安装包：`dist/dsh-workbuddy-helper-0.1.0.tgz`（本地产物，54 KB，未提交）。
+
+在线市场代码提交为 `54abc51`；本报告的后续文档提交在其之后。

@@ -636,7 +636,10 @@ sequenceDiagram
       name: dsh-workbuddy-helper
       config:
         enabled: true
-        source: hybrid
+        marketMode: auto
+        portal:
+          baseUrl: https://www.workbuddy.cn
+          prefix: /portal
         market:
           baseUrl: https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/expert-marketplace
           manifestPath: /expert_center.json
