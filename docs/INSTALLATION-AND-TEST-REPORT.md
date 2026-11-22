@@ -197,7 +197,7 @@ categories      -> categories / categoryId
 npm test
 ```
 
-结果：**18/18 通过**。新增覆盖：
+结果：**22/22 通过**。新增覆盖：
 
 - 在线市场字段映射；
 - `PortalMarket` 的 URL、Bearer 头、请求体、`get-by-ids`、分类；
@@ -349,7 +349,38 @@ tool_result:
 
 未执行：headless profile 没有 `DEEPSEEK_API_KEY`。工具管线、提示段、技能目录用本地 Messages 兼容假模型验证，不消耗真实额度。
 
-### 5.8 输入区 Web UI（Playwright + Edge）
+### 5.9 第二轮：连接器页签、技能搜索与深色模式修复（v0.3.8）
+
+在 5.8 的基础上按用户新需求完成三项：
+
+**1. 连接器页签**。宿主新增 `lib/connectors.js`：
+
+- 扫描 profile `node_modules` 里的连接器类插件（名称含 `connect/mcp/ima/browser`、或描述含“连接器/MCP”、或 `dsh.connector: true`）；
+- 从插件源码提取工具名前缀（`mcp__<server>__` 与重复出现的 `<seg>_`），把 `ctx.tools.definitions()` 里的工具映射回所属连接器；
+- 每个会话维护停用集合，通过 `agent.ctx.tools.restrict({ deny })` 生效，`agent/created`、`agent/disposed`、`tools/change`、`agent/pre-step` 都会重算（带重入保护，参照 dsh-windows-mcp 的实现）；
+- 下方是 MCP 连接器目录（`mcp_connector.json` 的 133 个目录项），支持搜索与分类。
+
+**2. 技能搜索**。技能页顶部搜索框，按名称+描述过滤两个分区，空态文案区分“无技能”与“无匹配”。
+
+**3. 深色模式修复**。探查发现 DSH 的 `--dsw-alias-brand-primary` 在浅色是 `#0f1115`（近黑）、深色是白：主按钮“品牌底+白字”在深色变成“白底白字”。改为单色反色：`background: var(--dsw-alias-label-primary)`、`color: var(--dsw-alias-bg-layer-2)`，两个主题都可读。
+
+Playwright 验证（Web profile，dsh-windows-mcp 已装作真实连接器）：
+
+```text
+TABS 专家1 | 技能5 | 连接器
+SKILL_MATCH_ROWS 6（搜索 “rea” 命中 rea-analysis 与 research-* 等）
+SAVE_COLORS_DARK {"bg":"rgb(255, 255, 255)","color":"rgb(23, 24, 28)","text":"保存技能"}
+POST /connectors/session 200 {"disabled":["dsh-windows-mcp"]}
+CATALOG total=133，搜索“地图” → 5 条（高德地图、百度地图…）
+ERRORS none
+```
+
+过程中修复的三个真实问题：
+
+1. `connectorViews()` 原是同步，路由层 `.catch()` 抛错；改为 async 并在 `Promise.resolve().then()` 里调用。
+2. 插件经 pnpm 装载时 `import.meta.url` 指向 `.pnpm` 真实路径，向上三级找不到 profile；改为先按 `--profile` argv、再按 `$DSH_HOME/profiles` 向上定位。
+3. pnpm 的依赖是 junction/symlink，`readdir(withFileTypes)` 需接受 `isSymbolicLink()`；另外 `existsSync` 不能从 `fs.promises` 取。
+
 
 插件现在带客户端半区：`conversation.input.left` 槽位一个「专家」按钮，点击打开同源面板。
 宿主半区注册 5 条 JSON 路由：
@@ -462,6 +493,7 @@ lib/webui.js           # 同源 JSON 路由
 lib/session.js         # slug 优先本地、ex_ 走市场
 test/core.test.mjs     # 13 项核心单测
 test/webui.test.mjs    # 5 项面板路由单测
+test/connectors.test.mjs # 4 项连接器单测（扫描/映射/门控/品牌色）
 test/host-integration.mjs
 cordis.patch.yml       # marketMode/authMode/portalBaseUrl 默认值
 ```

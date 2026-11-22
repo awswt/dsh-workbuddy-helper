@@ -663,6 +663,18 @@ POST /dsh-workbuddy-helper/off      {sessionId}
 - `apiUrl()` 必须保留 `search`，否则 `sessionId`、`query` 会被丢掉（实测踩过）。
 
 
+### 8.9 连接器页签与会话门控
+
+"连接器"= 会贡献外部工具的已装插件（MCP 桥、MCP 连接器、IMA 等）。
+
+- 扫描：profile `node_modules` 下的 `dsh-*` 包，名称/描述/`dsh.connector` 三条判据；源码里提取 `mcp__<server>__` 与重复的 `<seg>_` 前缀。
+- 映射：`ctx.tools.definitions()` 的工具名按前缀归属连接器，得到 `toolCount` 与示例工具。
+- 门控：每会话一个停用集合；`agent.ctx.tools.restrict({ deny })` 把停用连接器的工具从模型可见列表去掉；`agent/created|disposed|pre-step` 与 `tools/change` 触发重算，带 `applying` 重入保护。
+- 目录：读取 `mcp_connector.json` 的 133 个目录项（只读，不改连接状态），支持搜索/分类/分页。
+- 定位 profile：pnpm realpath 下 `import.meta.url` 不在 profile 目录，先解析 `--profile` argv，再向上找 `$DSH_HOME/profiles`。
+- 主题：主按钮用 `label-primary`/`bg-layer-2` 反色，规避品牌令牌在深浅主题间翻转。
+
+
 ## 9. 配置项
 
 ```yaml
@@ -1133,4 +1145,4 @@ v0 已实现：`workbuddy_helper` 工具、`/workbuddy-helper` 命令、在线�
 
 v0 未实现：Web 输入区 UI、Typert 远程服务、专家市场分页 UI、图片头像展示。它们不影响命令/工具路径，后续按设计文档第 10 节补齐。
 
-验证状态：`npm test` 18/18 通过；在线市场 `total_count=10000`、16 个分类；`ex_QvM298ih8T8g`（REA 逆向功能分析专家 / 软件逆向分析工程师）详情与 ZIP 包解析通过；快照 429 条仍可兜底；输入区 Web UI 已在 Web profile 用 Playwright 验证（面板、搜索、切换、技能保存、胶囊状态）。未跑真实模型调用，安装后需按 15.2 第 1 步做 spike。
+验证状态：`npm test` 22/22 通过；在线市场 `total_count=10000`、16 个分类；`ex_QvM298ih8T8g`（REA 逆向功能分析专家 / 软件逆向分析工程师）详情与 ZIP 包解析通过；快照 429 条仍可兜底；输入区 Web UI 已在 Web profile 用 Playwright 验证（三页签、技能搜索、专家切换、技能保存、连接器开关与目录搜索、胶囊状态、深色主按钮对比度）。未跑真实模型调用，安装后需按 15.2 第 1 步做 spike。

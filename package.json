@@ -1,6 +1,6 @@
 {
   "name": "dsh-workbuddy-helper",
-  "version": "0.2.7",
+  "version": "0.3.8",
   "description": "Session-scoped experts, skills and WorkBuddy connector status for DeepSeek Harness.",
   "type": "module",
   "main": "lib/index.js",
