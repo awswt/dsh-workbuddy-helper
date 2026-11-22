@@ -18,6 +18,24 @@
 
 > 说明：链路 2/3/4/5 的运行时证据全部来自**真实 headless 会话 + 假模型**（无 `DEEPSEEK_API_KEY`），不是假 ctx 直测。
 
+### 0.1 v0.6.7 复测（`node scripts/e2e.mjs`）
+
+上表是 0.5.0 的手写基线；脚本化后每次发布都复跑，0.6.7 的实测结果如下。
+
+| # | 链路 | 判定 | 一句话依据 |
+|---|------|------|-----------|
+| 1 | GitHub 安装（新 profile） | **PASS** | `plugin installs — v0.6.7 on disk (cli exit 0)`；成败以磁盘 `node_modules/dsh-workbuddy-helper/package.json` 为准，不看 CLI 退出码 |
+| 2 | profile bundles | **PASS** | `@deepseek-ai/dsh-base, @deepseek-ai/dsh-headless, dsh-workbuddy-helper` 三项齐全，缺 base/headless 就没有 headless app |
+| 3 | 已装包的桥接回归 | **PASS** | `14 passed, 0 failed against <profile>/node_modules/dsh-workbuddy-helper/lib` —— 同一批断言跑在**装进去的包**上（`WBH_LIB_ROOT`），这是唯一能抓住"同版本号不同内容"的检查 |
+| 4 | loader 可见性 | **PASS** | `--dump-config` 里有 `- id: workbuddy-helper / name: dsh-workbuddy-helper` |
+| 5 | 连接器 | **PASS** | `workbuddy_helper` 的 schema 含 `action｜skillAction｜skillId｜force｜page｜pageSize｜expertId｜connectorAction｜connectorId｜token｜query｜mode｜names｜expertNames`；`catalogTotal=134` |
+| 6 | 专家 | **PASS** | `expert persona reaches the next system prompt — 程枢`（block 出现在工具调用之后的请求里） |
+| 7 | 技能 | **PASS** | `skill catalog is injected — 5 requests carry it`；目录在独立 user 消息里，grep system 会漏 |
+| 8 | 假模型 / 会话 | **PASS** | `headless session exits cleanly`、`the model was actually called — 6 requests` |
+| 9 | 真 home boot | **BLOCKED（环境级，同 0.5.0）** | `preset-maoying` 依赖未安装的 `@deepseek-ai/dsh-agent-preset`；脚本因此自建隔离 home |
+
+检查项数量随 plan 变化：`--plan full` 10 项、`--plan connector-only` 9 项（无专家/技能段）。回归门默认开启（`--no-regression` 可关）。
+
 ## 1. 环境与版本
 
 | 项 | 值 |

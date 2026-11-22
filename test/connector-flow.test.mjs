@@ -2,10 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   CONNECT_ACTIONS,
+  DEEP_LINK_PARAM_CANDIDATES,
   connectorUiHint,
   connectorUiUrl,
   createOperationRegistry,
   describeConnectorError,
+  detectConnectorUiDeepLink,
   normalizeConnectResult,
   oauthHandoffAction,
   tokenConfigAction,
@@ -144,4 +146,55 @@ test('connectorUiHint names the connector and its server so the user can search 
     'a catalog-only config has no serverName yet',
   )
   assert.equal(connectorUiHint({}, null), '在管理页搜索「」完成授权或断开')
+})
+
+test('connectorUiUrl puts the id under the parameter the UI actually reads', () => {
+  // 深链参数由探测结果决定：不支持时走 default，支持时用探测到的名字。
+  assert.equal(
+    connectorUiUrl({ serverName: 'amap', configId: 'amap', deepLinkParam: 'connectorId' }),
+    '/mcp-connector/ui?serverName=amap&connectorId=amap&from=dsh-workbuddy-helper',
+  )
+  // 面板明确说"不要深链"时传空串，退回只带 serverName 的可观测跳转。
+  assert.equal(
+    connectorUiUrl({ serverName: 'amap', configId: 'amap', deepLinkParam: '' }),
+    '/mcp-connector/ui?serverName=amap&connector=amap&from=dsh-workbuddy-helper',
+  )
+})
+
+test('detectConnectorUiDeepLink only reports evidence it can point at', () => {
+  assert.deepEqual(detectConnectorUiDeepLink(''), { supported: false, param: null, evidence: null })
+  // 满屏 connector 字样但没有任何"读取该查询参数"的代码：不能算支持。
+  assert.deepEqual(
+    detectConnectorUiDeepLink('<div id="connectors">connector catalog connector-list</div>'),
+    { supported: false, param: null, evidence: null },
+  )
+  const getter = detectConnectorUiDeepLink("const id = searchParams.get('connector')")
+  assert.equal(getter.supported, true)
+  assert.equal(getter.param, 'connector')
+  assert.match(getter.evidence, /searchParams\.get\('connector'\)/)
+  const built = detectConnectorUiDeepLink('const url = `/mcp-connector/ui?connector=${id}`')
+  assert.equal(built.supported, true)
+  assert.equal(built.param, 'connector')
+  // 候选参数按声明顺序探测，第二个命中就用第二个的名字。
+  const second = detectConnectorUiDeepLink("const id = query.get('configId')")
+  assert.equal(second.param, 'configId')
+  assert.deepEqual(DEEP_LINK_PARAM_CANDIDATES, ['connector', 'connectorId', 'configId'])
+})
+
+test('connectorUiHint switches wording once a real deep link is available', () => {
+  const config = { id: 'amap', name: '高德地图' }
+  const state = { external: { serverName: 'amap' } }
+  assert.equal(
+    connectorUiHint(config, state, { deepLink: true }),
+    '已在管理页打开「高德地图」（server: amap）；找不到就用搜索框搜它',
+  )
+  assert.equal(
+    connectorUiHint({ id: 'amap', name: '高德地图' }, null, { deepLink: true }),
+    '已在管理页打开「高德地图」；找不到就用搜索框搜它',
+  )
+  // 默认（未探测/不支持）必须保持"去搜索"的措辞，不能谎称已经定位。
+  assert.equal(
+    connectorUiHint(config, state),
+    '在管理页搜索「高德地图」（server: amap）完成授权或断开',
+  )
 })

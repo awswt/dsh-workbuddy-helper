@@ -228,3 +228,34 @@ test('recordUiOpen persists the jump so the state shows it across restarts', asy
   assert.equal(reloaded.uiOpen.count, 2, 'uiOpen must survive a controller restart')
   fresh.dispose()
 })
+
+test('the OAuth handoff upgrades to a deep link once the connector UI can read one', async () => {
+  const { controller, profileDir } = await setup()
+  // 现在装的 dsh-mcp-connector 不支持深链：交接地址只带可观测参数。
+  const plain = await controller.connect('oauth-pkce', { action: 'connect', sessionId: 's1' })
+  assert.equal(plain.action.kind, 'open_url')
+  // 探测结果为不支持时连参数都不带：带了也没人读，只会让人误以为能定位。
+  assert.equal(plain.action.url, "/mcp-connector/ui")
+  assert.equal((await controller.uiCapability()).supported, false)
+  controller.dispose()
+
+  // 模拟上游某天开始读 ?connector=：同一个控制器应自动切换，不需要改代码。
+  const uiDir = path.join(profileDir, 'node_modules', 'dsh-mcp-connector', 'ui')
+  await fs.mkdir(uiDir, { recursive: true })
+  await fs.writeFile(
+    path.join(uiDir, 'index.html'),
+    '<script>const wanted = new URLSearchParams(location.search).get("connector")</script>',
+    'utf8',
+  )
+  const upgraded = createConnectorController(
+    { get: name => (name === 'tools' ? fakeToolsService([]) : undefined) },
+    { profileDir, dataDir: path.join(profileDir, '..', 'data2'), patchFile: path.join(profileDir, 'cordis.patch.yml'), catalogFile: path.join(profileDir, '..', 'mcp_connector.json') },
+  )
+  const capability = await upgraded.uiCapability()
+  assert.equal(capability.supported, true)
+  assert.equal(capability.param, 'connector')
+  const result = await upgraded.connect('oauth-pkce', { action: 'connect', sessionId: 's1' })
+  assert.match(result.action.url, /mcp-connector\/ui\?.*connector=oauth-pkce/)
+  assert.match(result.action.url, /from=dsh-workbuddy-helper/)
+  upgraded.dispose()
+})

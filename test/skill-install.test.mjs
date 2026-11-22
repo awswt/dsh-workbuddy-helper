@@ -453,3 +453,73 @@ test('two concurrent installs of one skill leave a complete directory', async ()
   const left = (await fs.readdir(skillsRootDir)).filter(name => name.startsWith('.'))
   assert.deepEqual(left, [], 'no .staging-* or .lock-* leftovers')
 })
+
+test('withInstallLock breaks a fresh lock only when force is asked for', async () => {
+  const root = await workspace()
+  const lockDir = path.join(root, '.lock-demo')
+  await fs.mkdir(lockDir, { recursive: true })
+  // 刚建的锁并不过期：默认必须等（这里给 120ms 就超时），force 才允许直接破。
+  await assert.rejects(
+    withInstallLock('demo', async () => 'never', { lockDir, lockTimeoutMs: 200, lockStaleMs: 600000 }),
+    /another skill install is still running/,
+  )
+  let seen = null
+  const value = await withInstallLock(
+    'demo',
+    async lock => {
+      seen = lock
+      return 'ran'
+    },
+    { lockDir, lockTimeoutMs: 200, lockStaleMs: 600000, force: true },
+  )
+  assert.equal(value, 'ran')
+  assert.deepEqual(seen, { acquired: true, forced: true })
+  await assert.rejects(fs.stat(lockDir), /ENOENT/)
+})
+
+test('a stale lock broken without force reports forced:false', async () => {
+  const root = await workspace()
+  const lockDir = path.join(root, '.lock-demo')
+  await fs.mkdir(lockDir, { recursive: true })
+  const old = new Date(Date.now() - 10 * 60 * 1000)
+  await fs.utimes(lockDir, old, old)
+  let seen = null
+  await withInstallLock('demo', async lock => { seen = lock }, { lockDir, lockStaleMs: 1000 })
+  // 过期破锁是常规路径，不该被报成"强制"——否则面板会对每次都提示强制解除。
+  assert.deepEqual(seen, { acquired: true, forced: false })
+})
+
+test('installSkill reports that it broke a leftover lock when force is used', async () => {
+  const root = await workspace()
+  const skillsRoot = path.join(root, '.dsh', 'skills')
+  const lockDir = path.join(skillsRoot, '.lock-word-docx')
+  await fs.mkdir(lockDir, { recursive: true })
+  const bytes = packageBytes({ 'word-docx/SKILL.md': SKILL_MD })
+  const plain = await installSkill({
+    portal: fakePortal({ skill_id: 'skill_1', name: 'word-docx', download_url: DOWNLOAD_URL }),
+    skillId: 'skill_1',
+    workspace: root,
+    allowHosts: [CDN_HOST],
+    fetchImpl: fakeFetch(bytes),
+    lockTimeoutMs: 200,
+    lockStaleMs: 600000,
+  }).then(
+    () => 'installed',
+    error => error.message,
+  )
+  assert.match(String(plain), /another skill install is still running/)
+
+  const forced = await installSkill({
+    portal: fakePortal({ skill_id: 'skill_1', name: 'word-docx', download_url: DOWNLOAD_URL }),
+    skillId: 'skill_1',
+    workspace: root,
+    allowHosts: [CDN_HOST],
+    fetchImpl: fakeFetch(bytes),
+    lockTimeoutMs: 200,
+    lockStaleMs: 600000,
+    force: true,
+  })
+  assert.equal(forced.forcedLock, true)
+  assert.deepEqual(forced.files, ['SKILL.md'])
+  await assert.rejects(fs.stat(lockDir), /ENOENT/)
+})

@@ -55,6 +55,7 @@ function parseArgs(argv) {
     cli: null,
     tokenVault: false,
     shareCatalog: true,
+    regression: true,
     timeoutMs: 240000,
     verbose: false,
   }
@@ -106,6 +107,12 @@ function parseArgs(argv) {
       case '--no-share-catalog':
         options.shareCatalog = false
         break
+      case '--regression':
+        options.regression = true
+        break
+      case '--no-regression':
+        options.regression = false
+        break
       case '--verbose':
         options.verbose = true
         break
@@ -134,6 +141,8 @@ const HELP = `dsh-workbuddy-helper end-to-end reproduction
   --skip-install                     assume the profile is already installed
   --token-vault                      copy WorkBuddy token vaults into the isolated home
   --no-share-catalog                 do not copy the real connector catalog into the isolated home
+  --regression / --no-regression     run the connector-UI bridge suite against the INSTALLED
+                                     package (default: on; this is what catches a stale tgz)
   --timeout <ms>                     headless session timeout (default: 240000)
   --verbose                          stream the child's stdout/stderr
 `
@@ -225,6 +234,38 @@ function createChecks() {
       return results.filter(entry => !entry.ok).length
     },
   }
+}
+
+/* ─────────────────────────── installed-package regression ───────────────── */
+
+/**
+ * Run a test file against the package that is actually on disk, not the working
+ * tree. The bridge suite (`test/connector-shared-state.test.mjs`) reads
+ * `WBH_LIB_ROOT` for that; without this gate it only ever proves that the
+ * checkout is self-consistent, which is exactly the gap that let a stale tgz
+ * (same version, different bytes) slip through in 0.5.0.
+ */
+async function runInstalledRegression({ profileDir, outDir, timeoutMs, verbose }) {
+  const libDir = path.join(profileDir, 'node_modules', 'dsh-workbuddy-helper', 'lib')
+  if (!fs.existsSync(path.join(libDir, 'connectors.js'))) {
+    return { ok: false, detail: `no installed lib at ${libDir}`, results: null }
+  }
+  const testFile = path.join(REPO, 'test', 'connector-shared-state.test.mjs')
+  if (!fs.existsSync(testFile)) {
+    return { ok: false, detail: `missing ${testFile}`, results: null }
+  }
+  const outcome = await run(process.execPath, ['--test', testFile], {
+    env: { ...process.env, WBH_LIB_ROOT: libDir },
+    timeoutMs: timeoutMs ?? 120000,
+    verbose: verbose === true,
+  })
+  fs.writeFileSync(path.join(outDir, 'regression.txt'), `${outcome.stdout}\n${outcome.stderr}`, 'utf8')
+  const passed = /^# pass (\d+)/m.exec(outcome.stdout)
+  const failed = /^# fail (\d+)/m.exec(outcome.stdout)
+  const detail = passed === null
+    ? `could not parse the TAP summary (exit ${outcome.code}): ${(outcome.stdout + outcome.stderr).slice(-400)}`
+    : `${passed[1]} passed, ${failed?.[1] ?? '?'} failed against ${libDir}`
+  return { ok: outcome.code === 0 && failed?.[1] === '0', detail, results: { passed: passed?.[1], failed: failed?.[1] } }
 }
 
 /* ───────────────────────── fake model (SSE dialect) ─────────────────────── */
@@ -556,6 +597,20 @@ async function main() {
       else checks.fail('profile bundles configured', configured.reason)
     } else {
       log('--skip-install: reusing the existing profile')
+    }
+
+    if (options.regression === true) {
+      // Runs before the session so a broken bridge fails fast with a readable
+      // reason instead of a vague missing-tool symptom later on.
+      const regression = await runInstalledRegression({
+        profileDir,
+        outDir,
+        timeoutMs: options.timeoutMs,
+        verbose: options.verbose,
+      })
+      report.steps.push({ step: 'regression', ...regression })
+      if (regression.ok === true) checks.pass('connector-UI bridge regression (installed package)', regression.detail)
+      else checks.fail('connector-UI bridge regression (installed package)', regression.detail)
     }
 
     const dumped = await dumpConfig({ cli, profile: options.profile, dshHome, verbose: options.verbose })

@@ -1,4 +1,4 @@
-﻿# AGENTS.md — dsh-workbuddy-helper 开发与运维手册
+# AGENTS.md — dsh-workbuddy-helper 开发与运维手册
 
 给在本仓库工作的 AI Agent 与人看的操作手册。改代码前先读完「陷阱清单」，那里的每一条都是踩过的坑。
 
@@ -66,17 +66,18 @@ scripts/release.mjs  版本 bump → 测试 → commit → push 一条龙。
 
 ## 4.1 连接器管理页跳转（`lib/connector-flow.js` + `recordUiOpen`）
 
-`dsh-mcp-connector` 的 UI **只读** `location.search` 的 `uiLocale` / `locale`（`ui/index.html:1235`、`:1252`），不支持 `?connector=<id>` 深链。所以本插件不做假深链：
+`dsh-mcp-connector` 的 UI **只读** `location.search` 的 `uiLocale` / `locale`（`ui/index.html:1235`、`:1252`），现在不支持 `?connector=<id>` 深链。所以本插件不做假深链，但也不写死"永远不支持"：
 
-- `connectorUiUrl()` 只拼可观测的查询参数（`serverName` / `connector` / `from`），返回相对路径；
-- `connectorUiHint()` 生成"去管理页搜索「名字」（server: xxx）"的提示，因为用户只能靠搜索定位；
-- 点按钮先 POST `connectors/action { action: 'openConnectorUi' }`，服务端 `recordUiOpen()` 把 `{configId, serverName, sessionId, count, at}` 记进**本插件自己的** store（`store.uiOpens`，不写对方的表），再返回 `url` / `hint` / `state`；
+- `detectConnectorUiDeepLink(html)` 在每个候选参数名（`DEEP_LINK_PARAM_CANDIDATES` = `connector` / `connectorId` / `configId`）上找**确凿证据**——`searchParams.get('connector')` 这类读取、或 `?connector=${…}` 这种拼装。刻意不做"包含 connector 字样"的模糊匹配，那份 HTML 里本来全是 connector。
+- 控制器用 `uiCapability()` 读一次 `dsh-mcp-connector/ui/index.html`（缓存 `UI_CAPABILITY_TTL_MS` = 60s，读失败静默当不支持），据此决定 `handoff()` 与面板跳转是否带深链参数。**上游哪天支持了，本插件不改代码就会自动开始用**（升级包后一分钟内生效）。
+- 不支持时：`connectorUiUrl()` 只拼可观测参数，`connectorUiHint()` 给"去管理页搜索「名字」（server: xxx）"，`oauthHandoffAction.url` 是裸 `/mcp-connector/ui`——不带没人读的参数，避免让人误以为能定位。
+- 点按钮先 POST `connectors/action { action: 'openConnectorUi' }`，服务端 `recordUiOpen()` 把 `{configId, serverName, sessionId, count, at}` 记进**本插件自己的** store（`store.uiOpens`，不写对方的表），再返回 `url` / `hint` / `deepLink` / `state`；
 - `state.uiOpen` 因此能显示"已去过管理页 N 次"，面板按钮变成「再次打开管理页」。这条记录**不参与** connected 判定。
 
 ## 5. 验证
 
 ```powershell
-node --test test/*.test.mjs          # 100 条，必须全绿
+node --test test/*.test.mjs          # 107 条，必须全绿
 node --check lib/<file>.js           # 改完随手检
 ```
 
@@ -86,11 +87,16 @@ node --check lib/<file>.js           # 改完随手检
 node scripts/e2e.mjs                     # 从 GitHub 装，跑全套
 node scripts/e2e.mjs --source local      # 装工作树（改完代码先跑这个）
 node scripts/e2e.mjs --plan connector-only --verbose
+node scripts/e2e.mjs --no-regression     # 只想看会话注入，跳过已装包回归
 ```
 
 退出码 0 才算通过，结论在 `.workbuddy/e2e/run/report.json`。它自己建隔离 home、复制真 home 的
 连接器目录（**不含** `connections`/`grants`，那是真实凭据）、写 profile bundles、跑 dump-config 与假模型会话。
-细节与"为什么必须这样"见 `docs/e2e-baseline.md` §4。
+
+其中 `connector-UI bridge regression` 这一项跑的是 `test/connector-shared-state.test.mjs` 的 14 条，
+但用的是 `WBH_LIB_ROOT=<profile>/node_modules/dsh-workbuddy-helper/lib`——**断言对象是装进去的包**，
+不是工作树。同版本号不同内容（0.5.0 出现过 14165B vs 13793B）只有这一项抓得到；本地跑单测时
+不设该变量即回退到 `../lib/`。细节与"为什么必须这样"见 `docs/e2e-baseline.md` §4。
 
 打包安装（**每轮换新目录**，否则 pnpm 报 `Already up to date` 装的是旧内容）：
 
@@ -128,7 +134,7 @@ node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin
 17. 凭据跟着 `DSH_HOME` 走：隔离 home 里没有 `workbuddy-vault/`，portal 的三个动作会统一报 `WORKBUDDY_HELPER_PORTAL_AUTH_REQUIRED`。要在隔离环境里跑端到端，先把真实 home 的 `workbuddy-vault/` 复制过去（4 个账号文件），别去改代码。
 18. 技能安装的锁目录建在 `<skillsRoot>` 里，所以**必须先 `mkdir(root)` 再上锁**：首次安装时 `.dsh/skills` 还不存在，直接 `mkdir(<root>/.lock-<slug>)` 会 `ENOENT`。另外锁必须是"目录 + 过期时间"而不是纯进程内队列，因为面板与 `workbuddy_helper` 工具可能来自不同进程。
 19. 隔离 home 里 `storages/mcp_connector.json` 不存在 → `catalogTotal` 是 0。这**不是**插件 bug（`scripts/e2e.mjs` 会从真 home 复制目录表，但故意丢掉 `connections`/`grants`）。写断言前先看目录是不是空的。
-20. `dsh-mcp-connector` 的管理页**只读** `uiLocale`/`locale` 两个查询参数，`?connector=<id>` 不会被解析。任何"跳过去自动定位到某一行"的实现都是假的；只能记录跳转 + 提示用户搜索（§4.1）。
+20. `dsh-mcp-connector` 的管理页现在**只读** `uiLocale`/`locale`，`?connector=<id>` 不会被解析——所以不能假装能定位到某一行。但别把这个结论写死进代码：`uiCapability()` 会探测页面文本，上游一旦开始读深链参数就自动切换（§4.1）。改这块时两个方向都要测：不支持时 URL 必须干净，支持时参数名必须跟着探测结果走。
 
 ## 8. 边界
 

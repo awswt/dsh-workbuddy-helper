@@ -3,13 +3,22 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-
-import { createConnectorController } from '../lib/connectors.js'
+import { pathToFileURL } from 'node:url'
 
 /**
  * 桥接测试：连接由 `dsh-mcp-connector` 的管理页建立时，本插件的状态视图
  * 必须显示"已连接/需授权"，而不是"尚未连接"，并且绝不重复写 patch。
+ *
+ * `WBH_LIB_ROOT` 让同一批断言可以跑在**已装进 profile 的包**上（`scripts/e2e.mjs`
+ * 的回归门就是这么用的）。默认指向仓库工作树，所以 `node --test` 的行为不变。
+ * 这不是重复劳动：装进去的 tgz 与工作树同版本号却可能内容不同（0.5.0 就出现过
+ * 14165B vs 13793B），只有对磁盘上的产物断言才抓得到。
  */
+const libRoot = process.env.WBH_LIB_ROOT
+const connectorsUrl = libRoot === undefined || libRoot === ''
+  ? new URL('../lib/connectors.js', import.meta.url)
+  : new URL('connectors.js', pathToFileURL(path.resolve(libRoot) + path.sep))
+const { createConnectorController } = await import(connectorsUrl.href)
 
 const AMAP_CONNECTORS = [
     {
