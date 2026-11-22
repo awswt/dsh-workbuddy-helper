@@ -134,7 +134,7 @@ dsh plugin --profile <profile> add https://your-cdn.example.com/dsh-workbuddy-he
 
 已验证：
 
-- tarball 大小 47.8 kB；
+- tarball 大小 47.3 kB；
 - 安装到全新 profile `workbuddy-helper-tgz2`；
 - 依赖解析为 `dsh-workbuddy-helper file:E:/.../dsh-workbuddy-helper-0.1.0.tgz`；
 - `--dump-config` 退出码 0，组合中出现 `dsh-workbuddy-helper` bundle 行；
