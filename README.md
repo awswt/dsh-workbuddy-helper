@@ -53,6 +53,11 @@ dsh plugin --profile <profile> add git+https://github.com/awswt/dsh-workbuddy-he
 
 ![技能页：专家自带技能 + 本机技能](docs/ui-17-skill-markets.png)
 
+技能市场有两个来源，页签按本机情况显示：
+
+- **WorkBuddy 技能市场**：始终可用，需要登录 WorkBuddy（见「WorkBuddy 账号接入」）。
+- **记忆系统技能市场**：只有当前 profile 装了 `dsh-mnemon` 才出现。它不是本插件的能力，只是把你送到 dsh-mnemon 自己的技能管理页（技能 / 进化 / 评测 / 市场 / 回收站）。没装那个包时这个页签不会渲染——它指向一个不存在的页面，留着只会误导。
+
 **连接器**：两部分。上半区是本机已装的连接器插件，开关只影响当前会话的工具可见性；下半区是连接器目录（134 条），支持按名称/描述搜索，需要凭据的会在行内直接收 API Key 或 Bearer Token。
 
 连接器有三种落地形态，面板会分别标注：
@@ -277,6 +282,9 @@ $DSH_HOME/workbuddy-helper/
 
 **专家市场只有 429 条**
 那是公开快照，没有登录态时的兜底。登录 WorkBuddy 就能拿到 10,000 条在线市场。
+
+**技能页看不到「记忆系统技能市场」**
+这个页签只在当前 profile 装了 `dsh-mnemon` 时出现。装了就重启 DSH；没装就没这个入口——它本来就是 dsh-mnemon 自己的技能管理页，本插件只负责把你送过去。
 
 ## 相关文档
 
