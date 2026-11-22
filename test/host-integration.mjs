@@ -117,7 +117,7 @@ const ctx = {
 
 apply(ctx, {
   dataDir,
-  authMode: 'none',
+  authMode: 'auto',
   localRoots: [path.join(os.homedir(), '.workbuddy', 'plugins', 'marketplaces', 'experts', 'plugins')],
   marketBaseUrl: 'https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/expert-marketplace',
 })
@@ -144,8 +144,12 @@ assert.equal(skills.global.length, 2)
 assert.equal(skills.expert.some(skill => skill.name === 'agent-craft'), true)
 
 const marketView = JSON.parse(await ctx.registeredTool.execute({ action: 'market', query: '逆向' }, { agent }))
-assert.equal(marketView.publicTotal, 429)
-assert.equal(marketView.items.some(item => item.id === 'rea-reverse-engineer' && item.source === 'local'), true)
+assert.equal(marketView.source, 'portal')
+assert.equal(marketView.marketTotal >= 10000, true)
+assert.equal(marketView.portalAvailable, true)
+const reverseItem = marketView.items.find(item => item.id === 'ex_QvM298ih8T8g')
+assert.equal(reverseItem?.profession, '软件逆向分析工程师')
+assert.equal(reverseItem?.installed, true, JSON.stringify({ plugin: reverseItem?.plugin, localTotal: marketView.localTotal, sample: marketView.items.slice(0,3).map(i => [i.id, i.plugin, i.source, i.installed]) }))
 
 const reverse = JSON.parse(await ctx.registeredTool.execute({ action: 'expert', expertId: 'rea-reverse-engineer' }, { agent }))
 assert.equal(reverse.applied, true)
@@ -172,9 +176,11 @@ console.log(JSON.stringify({
   selectedExpert: selected.expert.id,
   selectedSkills: skills.expert.map(skill => skill.name),
   market: {
+    source: marketView.source,
     publicTotal: marketView.publicTotal,
     localTotal: marketView.localTotal,
-    reverseFound: marketView.items.some(item => item.id === 'rea-reverse-engineer' && item.source === 'local'),
+    reverseFound: reverseItem !== undefined,
+    reverseInstalled: reverseItem?.installed === true,
   },
   reverseExpert: reverse.expert.displayName,
   cleared: cleared.applied === false,

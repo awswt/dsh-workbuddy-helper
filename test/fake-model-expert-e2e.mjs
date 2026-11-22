@@ -2,6 +2,8 @@ import http from 'node:http'
 import { spawn } from 'node:child_process'
 
 const requests = []
+const expertId = process.env.DSH_TEST_EXPERT_ID ?? 'ai-agent-engineer'
+const prompt = process.env.DSH_TEST_EXPERT_PROMPT ?? `Select the ${expertId} expert.`
 let afterToolBody = ''
 
 function sse(res, events) {
@@ -47,7 +49,7 @@ const server = http.createServer((req, res) => {
     try { parsed = JSON.parse(body) } catch {}
     const messagesText = JSON.stringify(parsed.messages ?? [])
     const hasToolResult = messagesText.includes('tool_result')
-    const isMainPrompt = messagesText.includes('Select the ai-agent-engineer expert')
+    const isMainPrompt = messagesText.includes(prompt)
     requests.push({ hasToolResult, isMainPrompt, bytes: body.length })
     if (hasToolResult) {
       afterToolBody = body
@@ -80,7 +82,7 @@ const server = http.createServer((req, res) => {
       ['content_block_delta', {
         type: 'content_block_delta',
         index: 0,
-        delta: { type: 'input_json_delta', partial_json: '{"action":"expert","expertId":"ai-agent-engineer"}' },
+        delta: { type: 'input_json_delta', partial_json: JSON.stringify({ action: 'expert', expertId }) },
       }],
       ['content_block_stop', { type: 'content_block_stop', index: 0 }],
       ['message_delta', {
@@ -96,7 +98,7 @@ await new Promise(resolve => server.listen(9878, '127.0.0.1', resolve))
 
 const exe = process.env.DSH_APP_EXE ?? 'D:/Program Files/deepseek harness/DeepSeek Harness.exe'
 const bin = process.env.DSH_BIN ?? 'D:/Program Files/deepseek harness/resources/app.asar/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'
-const child = spawn(exe, [bin, '--profile', process.env.DSH_TEST_PROFILE ?? 'workbuddy-helper-gh', 'Select the ai-agent-engineer expert.'], {
+const child = spawn(exe, [bin, '--profile', process.env.DSH_TEST_PROFILE ?? 'workbuddy-helper-gh', prompt], {
   env: {
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',
@@ -118,7 +120,7 @@ child.on('close', async code => {
   console.log('STDERR_HEAD', err.split('\n').slice(0, 2).join(' | '))
   console.log('REQUESTS', JSON.stringify(requests))
   console.log('AFTER_TOOL_HAS_EXPERT_BLOCK', afterToolBody.includes('<expert_selection'))
-  console.log('AFTER_TOOL_HAS_EXPERT_NAME', afterToolBody.includes('ai-agent-engineer'))
+  console.log('AFTER_TOOL_HAS_EXPERT_NAME', afterToolBody.includes(expertId))
   console.log('AFTER_TOOL_HAS_DISPLAY_NAME', afterToolBody.includes('程枢'))
   console.log('AFTER_TOOL_HAS_OBJECT_NAMESTRING', afterToolBody.includes('[object Object]'))
   console.log('AFTER_TOOL_HAS_SKILL', afterToolBody.includes('agent-craft'))

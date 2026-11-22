@@ -9,6 +9,7 @@
     "./auth": "./lib/auth.js",
     "./connector": "./lib/connector.js",
     "./market": "./lib/market.js",
+    "./portal": "./lib/portal.js",
     "./bundle": "./lib/bundle.js",
     "./session-plugin": "./lib/session-plugin.js",
     "./skill-providers": "./lib/skill-providers.js",
@@ -24,6 +25,7 @@
     "@deepseek-ai/dsh": ">=0.2.0-rc.1 <0.3.0-0"
   },
   "dependencies": {
+    "fflate": "^0.8.2",
     "tar": "^7.5.22",
     "yaml": "^2.9.0"
   },

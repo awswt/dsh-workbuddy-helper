@@ -4,10 +4,12 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { strToU8, zipSync } from 'fflate'
 import { AuthError, assertAllowedUrl, describeAuth, resolveAuth } from '../lib/auth.js'
 import { BundleStore } from '../lib/bundle.js'
 import { WorkBuddyConnector } from '../lib/connector.js'
 import { MarketClient } from '../lib/market.js'
+import { PortalMarket, normalizePortalExpert } from '../lib/portal.js'
 import { renderExpertBlock } from '../lib/session-plugin.js'
 import { safeJoin } from '../lib/util.js'
 
@@ -189,6 +191,195 @@ test('BundleStore reads a local expert bundle and skips a path-escaping skill', 
   assert.equal(pkg.skills[0].name, 'alpha-skill')
   assert.equal(pkg.skills[0].invocation.modelInvocable, true)
   assert.equal(pkg.warnings.some(item => item.includes('outside')), true)
+})
+
+test('normalizePortalExpert maps live-market fields', () => {
+  const expert = normalizePortalExpert({
+    expert_id: 'ex_demo',
+    plugin_name: 'demo-plugin',
+    agent_name: 'demo-agent',
+    expert_type: 'agent',
+    plugin_version: '2.0.0',
+    display_name_zh: '演示专家',
+    profession_zh: '演示工程师',
+    description_zh: '演示描述',
+    icon: 'https://openplatform-cdn.codebuddy.cn/a.png',
+    categories: ['02-Engineering'],
+    categories_detail: [{ id: '02-Engineering', name_zh: '技术工程' }],
+    tags_zh: ['演示'],
+    use_count: 12,
+    developer: { display_nickname: '开发者' },
+  })
+  assert.equal(expert.id, 'ex_demo')
+  assert.equal(expert.marketExpertId, 'ex_demo')
+  assert.equal(expert.plugin, 'demo-plugin')
+  assert.equal(expert.displayName, '演示专家')
+  assert.equal(expert.profession, '演示工程师')
+  assert.equal(expert.version, '2.0.0')
+  assert.equal(expert.categoryId, '02-Engineering')
+  assert.equal(expert.source, 'portal')
+})
+
+test('PortalMarket calls the live market endpoints with a bearer token', async () => {
+  const requests = []
+  const server = http.createServer((req, res) => {
+    let body = ''
+    req.on('data', chunk => { body += chunk })
+    req.on('end', () => {
+      requests.push({ url: req.url, method: req.method, auth: req.headers.authorization ?? null, body })
+      res.setHeader('content-type', 'application/json')
+      if (req.url === '/portal/operation-platform/market/expert/list') {
+        res.end(JSON.stringify({
+          code: 0,
+          data: {
+            total_count: 10000,
+            experts: [{
+              expert_id: 'ex_demo',
+              plugin_name: 'demo-plugin',
+              agent_name: 'demo-plugin',
+              display_name_zh: '演示专家',
+              profession_zh: '演示工程师',
+              plugin_version: '1.0.0',
+            }],
+          },
+        }))
+        return
+      }
+      if (req.url === '/portal/operation-platform/market/expert/get-by-ids') {
+        res.end(JSON.stringify({
+          code: 0,
+          data: {
+            experts: [{
+              expert_id: 'ex_demo',
+              plugin_name: 'demo-plugin',
+              agent_name: 'demo-plugin',
+              display_name_zh: '演示专家',
+              profession_zh: '演示工程师',
+              plugin_version: '1.0.0',
+            }],
+          },
+        }))
+        return
+      }
+      if (req.url === '/portal/operation-platform/market/expert-categories') {
+        res.end(JSON.stringify({ code: 0, data: { items: [{ id: 'eng', name_zh: '技术工程', sort_order: 1 }] } }))
+        return
+      }
+      res.statusCode = 404
+      res.end('{}')
+    })
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const port = server.address().port
+  try {
+    const portal = new PortalMarket({
+      baseUrl: `http://127.0.0.1:${port}`,
+      allowHosts: ['127.0.0.1'],
+      allowInsecureLoopback: true,
+      authProvider: async () => ({ header: 'Authorization', value: `Bearer ${FAKE_TOKEN}` }),
+    })
+    const listed = await portal.listExperts({ query: '逆向', pageSize: 5 })
+    assert.equal(listed.total, 10000)
+    assert.equal(listed.items[0].id, 'ex_demo')
+    assert.equal(requests[0].auth, `Bearer ${FAKE_TOKEN}`)
+    assert.deepEqual(JSON.parse(requests[0].body), {
+      page: 1,
+      page_size: 5,
+      sort_by: 'reco_rank',
+      sort_order: 'desc',
+      keyword: '逆向',
+    })
+
+    const detail = await portal.getExpert('ex_demo')
+    assert.equal(detail.plugin, 'demo-plugin')
+    assert.equal(requests[1].url, '/portal/operation-platform/market/expert/get-by-ids')
+
+    const categories = await portal.categories()
+    assert.equal(categories[0].id, 'eng')
+  } finally {
+    server.close()
+  }
+})
+
+test('PortalMarket reports a missing account token as an auth error', async () => {
+  const portal = new PortalMarket({
+    baseUrl: 'https://www.workbuddy.cn',
+    allowHosts: ['www.workbuddy.cn'],
+    authProvider: async () => undefined,
+  })
+  await assert.rejects(
+    () => portal.listExperts({ query: 'x' }),
+    error => error instanceof AuthError && error.code === 'WORKBUDDY_HELPER_PORTAL_AUTH_REQUIRED',
+  )
+})
+
+test('MarketClient prefers the live portal and falls back to the snapshot', async () => {
+  const portal = {
+    baseUrl: 'https://www.workbuddy.cn',
+    async listExperts() {
+      return { total: 10000, matched: 1, source: 'portal', stale: false, items: [{ id: 'ex_demo', plugin: 'demo', source: 'portal' }] }
+    },
+  }
+  const market = new MarketClient({ portal, mode: 'auto', baseUrl: 'https://example.com', cacheDir: await tempDir(), allowHosts: ['example.com'] })
+  const live = await market.listExperts({ query: 'demo' })
+  assert.equal(live.source, 'portal')
+  assert.equal(live.total, 10000)
+
+  const failing = new MarketClient({
+    portal: { async listExperts() { throw new Error('boom') } },
+    mode: 'auto',
+    baseUrl: 'https://example.com',
+    cacheDir: await tempDir(),
+    allowHosts: ['example.com'],
+    authProvider: async () => undefined,
+    fetchImpl: async () => new Response(JSON.stringify({
+      version: '1',
+      experts: [{ id: 'snap', plugin: 'snap', displayName: { zh: '快照' } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }),
+  })
+  const fallback = await failing.listExperts({})
+  assert.equal(fallback.source, 'cos')
+  assert.equal(fallback.total, 1)
+  assert.equal(typeof fallback.warning, 'string')
+})
+
+test('BundleStore extracts a ZIP bundle and rejects path traversal', async () => {
+  const root = await tempDir()
+  const archive = path.join(root, 'expert.zip')
+  const zip = zipSync({
+    '.codebuddy-plugin/plugin.json': strToU8(JSON.stringify({
+      name: 'zip-expert',
+      version: '1.0.0',
+      displayName: { zh: '压缩专家' },
+      agents: ['./agents/zip-expert.md'],
+    })),
+    'agents/zip-expert.md': strToU8('You are a zip expert.\n'),
+    'skills/zip-skill/SKILL.md': strToU8('---\nname: zip-skill\ndescription: Zip skill.\n---\n\nBody.\n'),
+    '../escape.txt': strToU8('nope'),
+  })
+  await fs.writeFile(archive, Buffer.from(zip))
+  const market = {
+    async resolveBundle() {
+      return { url: 'https://openplatform-cdn.codebuddy.cn/expert.zip', kind: 'zip', auth: false }
+    },
+    async download(_url, destination) {
+      await fs.mkdir(path.dirname(destination), { recursive: true })
+      await fs.copyFile(archive, destination)
+      return { bytes: zip.length, sha256: 'test' }
+    },
+  }
+  const store = new BundleStore({
+    cacheDir: path.join(root, 'cache'),
+    market,
+    localRoots: [],
+    maxPromptChars: 1000,
+  })
+  const pkg = await store.ensure({ id: 'ex_zip', marketExpertId: 'ex_zip', plugin: 'zip-expert', version: '1.0.0' })
+  assert.equal(pkg.source, 'market')
+  assert.equal(pkg.displayName, '压缩专家')
+  assert.equal(pkg.version, '1.0.0')
+  assert.equal(pkg.skills[0].name, 'zip-skill')
+  assert.equal(await fs.access(path.join(root, 'escape.txt')).then(() => true, () => false), false)
 })
 
 test('safeJoin rejects traversal and accepts descendants', () => {

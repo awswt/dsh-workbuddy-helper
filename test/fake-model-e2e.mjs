@@ -2,6 +2,8 @@ import http from 'node:http'
 import { spawn } from 'node:child_process'
 
 const requests = []
+const toolInput = process.env.DSH_TEST_TOOL_INPUT ?? '{"action":"connector"}'
+const okText = process.env.DSH_TEST_OK_TEXT ?? 'CONNECTOR_TOOL_OK'
 let toolResultText = ''
 
 function sse(res, events) {
@@ -53,7 +55,7 @@ const server = http.createServer((req, res) => {
         ['content_block_delta', {
           type: 'content_block_delta',
           index: 0,
-          delta: { type: 'input_json_delta', partial_json: '{"action":"connector"}' },
+          delta: { type: 'input_json_delta', partial_json: toolInput },
         }],
         ['content_block_stop', { type: 'content_block_stop', index: 0 }],
         ['message_delta', {
@@ -110,7 +112,7 @@ const server = http.createServer((req, res) => {
       ['content_block_delta', {
         type: 'content_block_delta',
         index: 0,
-        delta: { type: 'text_delta', text: 'CONNECTOR_TOOL_OK' },
+        delta: { type: 'text_delta', text: okText },
       }],
       ['content_block_stop', { type: 'content_block_stop', index: 0 }],
       ['message_delta', {
@@ -126,7 +128,7 @@ await new Promise(resolve => server.listen(9877, '127.0.0.1', resolve))
 
 const exe = process.env.DSH_APP_EXE ?? 'D:/Program Files/deepseek harness/DeepSeek Harness.exe'
 const bin = process.env.DSH_BIN ?? 'D:/Program Files/deepseek harness/resources/app.asar/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'
-const child = spawn(exe, [bin, '--profile', process.env.DSH_TEST_PROFILE ?? 'workbuddy-helper-gh', 'Call the workbuddy_helper tool with action=connector.'], {
+const child = spawn(exe, [bin, '--profile', process.env.DSH_TEST_PROFILE ?? 'workbuddy-helper-gh', process.env.DSH_TEST_PROMPT ?? 'Call the workbuddy_helper tool with action=connector.'], {
   env: {
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',

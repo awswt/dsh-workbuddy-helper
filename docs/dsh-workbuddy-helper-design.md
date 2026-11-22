@@ -5,13 +5,15 @@
 - 目标宿主：DeepSeek Harness 0.2.x（本机 dsh-tui 0.18.0，desktop profile）
 - 目标：在 DSH 会话内像 WorkBuddy 一样选择、切换、移除专家与技能，专家市场沿用 WorkBuddy 市场，专家与技能严格按会话隔离，可选注入 WorkBuddy 身份凭据。
 
+> **2026-11-22 修正（重要）**：本文最初把公开 COS 的 `expert_center.json` 当成“WorkBuddy 专家市场”，因此记录了 429 条。该文件只是周期性发布的**快照**（`lastUpdated=2026-08-18`）。App 实际读取的是在线市场 `POST https://www.workbuddy.cn/portal/operation-platform/market/expert/list`，需要账号 token；未过滤时 `total_count=10000`，16 个分类。本机 `rea-reverse-engineer`（软件逆向分析工程师）与 `senior-fullstack-engineer`（高级全栈工程师）都来自在线市场，且都不在 429 条快照里。当前实现以在线市场为主、快照兜底，见 `lib/portal.js`。
+
 ---
 
 ## 0. 结论
 
 1. 不需要改 DSH 内核，也不需要重启。DSH 已具备按 Agent 隔离的注册机制：`Agent.ctx` 是 agent 作用域上下文，通过它注册的提示段、工具、技能 provider 只对该 Agent 可见，销毁时自动回滚。
 2. 会话隔离用“agent 作用域子插件 + 两个技能 provider + 每会话 sidecar”实现，不写全局 `cordis.patch.yml`、不改用户技能目录、不启用/禁用磁盘上的 `SKILL.md`，因此不会污染其他会话。
-3. WorkBuddy 专家市场当前是公开 COS 桶，实测清单与专家包均可匿名访问（HTTP 200）。身份注入做成可选适配层：默认 `auth.mode=none`，企业网关或未来鉴权时再启用；凭据只存 DSH 凭据服务，不进配置、不进日志、不回显给前端。
+3. WorkBuddy 在线市场需要账号：`POST /portal/operation-platform/market/expert/list` 未带 token 返回 401，带 connector 的 `Authorization: Bearer` 返回 `total_count=10000`。公开 COS 只提供 429 条快照，作为无账号时的离线兜底。默认 `auth.mode=auto`，有 connector token 就用在线市场，没有就用快照；凭据只存 DSH 凭据服务或 connector vault，不进配置、不进日志、不回显给前端。
 
 ---
 
@@ -19,8 +21,11 @@
 
 | 事实 | 证据 |
 |---|---|
-| WorkBuddy 专家市场清单公开可读 | `GET https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/expert-marketplace/expert_center.json` 返回 200，大小 1,158,100 字节 |
-| 清单规模 | `experts` 429 条，`categories` 15 个，字段含 `id / categoryId / displayName / profession / description / promptFile / avatar / plugin / agentName / expertType` |
+| WorkBuddy 在线市场需要账号 | `POST https://www.workbuddy.cn/portal/operation-platform/market/expert/list` 无 token 返回 401；带 connector `Authorization: Bearer` 返回 `code=0`、`total_count=10000` |
+| 在线市场规模 | 100 条/页，100 页可读，第 101 页为空；16 个分类（`expert-categories`） |
+| 在线市场专家包 | `POST .../expert/download-url` 返回签名 ZIP（CDN `openplatform-cdn.codebuddy.cn`）；解包后同样是 `.codebuddy-plugin/plugin.json` + `agents/` + `skills/` |
+| 公开快照可匿名读取 | `GET https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/expert-marketplace/expert_center.json` 返回 200，大小 1,158,100 字节 |
+| 快照规模 | `experts` 429 条，`categories` 15 个，`lastUpdated=2026-08-18`；不含 `rea-reverse-engineer` / `senior-fullstack-engineer` |
 | 专家包公开可下载 | `GET .../expert-marketplace/bundles/content-creator.tar.gz` 返回 200，677,238 字节 |
 | 专家包结构 | `.codebuddy-plugin/plugin.json`、`agents/*.md`、`skills/*/SKILL.md`、`avatars/*`、`license/*` |
 | 本机已安装专家可直接复用 | `~/.workbuddy/plugins/marketplaces/experts/plugins/<id>/.codebuddy-plugin/plugin.json`，例如 `ai-agent-engineer` |
@@ -486,7 +491,18 @@ UI 在空白新会话中拿不到 `sessionId` 时：
 
 只读，不修改 WorkBuddy 安装目录。
 
-### 8.2 清单与包地址
+### 8.2 市场与包地址
+
+在线市场（主）：
+
+```text
+list:        POST <portal>/operation-platform/market/expert/list
+categories:  GET  <portal>/operation-platform/market/expert-categories
+detail:      POST <portal>/operation-platform/market/expert/get-by-ids
+bundle:      POST <portal>/operation-platform/market/expert/download-url  -> signed ZIP
+```
+
+公开快照（兜底）：
 
 ```text
 manifest:  <baseUrl>/expert_center.json
@@ -494,7 +510,7 @@ bundle:    <baseUrl>/bundles/<plugin>.tar.gz
 avatar:    <baseUrl>/avatars/<id>.png
 ```
 
-`baseUrl` 默认：
+`portal` 默认 `https://www.workbuddy.cn/portal`；若 connector 账号记录里有 `auth.domain`，优先用该域名的 `https://` origin。`baseUrl` 默认：
 
 ```text
 https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/expert-marketplace
@@ -668,15 +684,17 @@ sequenceDiagram
 | 配置 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `enabled` | boolean | true | 总开关；false 时不注册命令/UI，不加载市场 |
-| `source` | enum | hybrid | `market / local / hybrid` |
-| `market.baseUrl` | string | 见上 | 必须是 HTTPS，且在 allowHosts 内 |
+| `marketMode` | enum | auto | `auto`（在线优先、快照兜底）/ `portal` / `cos` |
+| `market.baseUrl` | string | 见上 | 公开快照基址；必须是 HTTPS，且在 allowHosts 内 |
+| `portal.baseUrl` | string | https://www.workbuddy.cn | 在线市场基址；账号 `domain` 优先 |
+| `portal.prefix` | string | /portal | 在线市场路由前缀 |
 | `market.timeoutMs` | number | 15000 | 单次请求超时 |
 | `market.retry.attempts` | number | 2 | 重试次数（不含首次） |
-| `market.cacheTtlMs` | number | 6h | 清单新鲜期 |
+| `market.cacheTtlMs` | number | 6h | 快照新鲜期 |
 | `market.staleWhileErrorMs` | number | 7d | 出错时允许的 stale 窗口 |
-| `auth.mode` | enum | none | 认证方式 |
+| `auth.mode` | enum | auto | `auto / none / bearer / header / cookie / workbuddy-connector` |
 | `auth.credentialRef` | string | WB_EXPERT_TOKEN | 凭据键名 |
-| `auth.allowHosts` | string[] | 市场 host | 凭据可发送的 host |
+| `auth.allowHosts` | string[] | 快照 + 在线市场 + CDN | 凭据可发送 / 包可下载的 host |
 | `local.roots` | string[] | 两个 WorkBuddy 目录 | 本地专家根，只读 |
 | `session.maxActiveExperts` | number | 1 | v1 固定 1 |
 | `session.maxSelectedSkills` | number | 64 | 超过拒绝并提示 |
@@ -1060,8 +1078,9 @@ package.json
 cordis.patch.yml
 lib/
 ├─ index.js              # 工具、命令、agent 生命周期接线
-├─ market.js             # 市场清单、缓存、鉴权头、重定向校验
-├─ bundle.js             # 安全下载/解包、提示词与技能解析
+├─ portal.js             # 在线市场：列表/分类/详情/签名下载
+├─ market.js             # 在线优先 + 快照兜底、缓存、鉴权头、重定向校验
+├─ bundle.js             # 安全下载/解包（ZIP + tar.gz）、提示词与技能解析
 ├─ connector.js          # WorkBuddy connector 凭据库只读适配
 ├─ session.js            # 每会话状态、挂载/销毁、sidecar
 ├─ session-plugin.js     # agent 作用域提示段 + provider
@@ -1072,8 +1091,8 @@ test/core.test.mjs
 docs/dsh-workbuddy-helper-design.md
 ```
 
-v0 已实现：`workbuddy_helper` 工具、`/workbuddy-helper` 命令、市场清单、专家包下载/本地专家、会话级提示段与技能过滤、WorkBuddy connector 状态读取、sidecar 持久化、失败回滚。
+v0 已实现：`workbuddy_helper` 工具、`/workbuddy-helper` 命令、在线市场（列表/分类/详情/签名 ZIP 下载）、快照兜底、本地专家、会话级提示段与技能过滤、WorkBuddy connector 状态读取、sidecar 持久化、失败回滚。
 
 v0 未实现：Web 输入区 UI、Typert 远程服务、专家市场分页 UI、图片头像展示。它们不影响命令/工具路径，后续按设计文档第 10 节补齐。
 
-验证状态：`npm test` 8/8 通过；真实市场 429 条清单、`ContentCreator` bundle 下载解析通过；未在真实 DSH 宿主跑模型调用，安装后需按 15.2 第 1 步做 spike。
+验证状态：`npm test` 13/13 通过；在线市场 `total_count=10000`、16 个分类；`ex_QvM298ih8T8g`（REA 逆向功能分析专家 / 软件逆向分析工程师）详情与 ZIP 包解析通过；快照 429 条仍可兜底；未在真实 DSH 宿主跑模型调用，安装后需按 15.2 第 1 步做 spike。

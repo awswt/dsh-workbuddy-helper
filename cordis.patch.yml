@@ -7,4 +7,6 @@
       name: dsh-workbuddy-helper
       config:
         enabled: true
-        authMode: none
+        marketMode: auto
+        authMode: auto
+        portalBaseUrl: https://www.workbuddy.cn

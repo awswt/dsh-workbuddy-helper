@@ -1,158 +1,56 @@
-# dsh-workbuddy-helper 迁移、安装方式与专家数据核查报告
+# dsh-workbuddy-helper 迁移、安装方式与专家市场核查报告（v2 修正）
 
 - 日期：2026-11-22
-- 新仓库：`git@github.com:awswt/dsh-workbuddy-helper.git`
+- 仓库：`git@github.com:awswt/dsh-workbuddy-helper.git`
 - 分支：`main`
-- 迁移代码提交：`44f88d9`
 - 宿主：DeepSeek Harness `0.2.2-rc.5`
+- 本版重点：修正上一版把“公开快照 429 条”误当成“WorkBuddy 专家市场”的结论
 
 ---
 
-## 1. 三项任务结论
+## 1. 结论
 
-| 任务 | 结论 |
+| 问题 | v2 结论 |
 |---|---|
-| 1. 迁移到新仓库并改名 | 已完成。包名、bundle id、工具、命令、prompt 段、provider、数据目录、文档全部改为 `dsh-workbuddy-helper` / `workbuddy_helper` / `/workbuddy-helper` |
-| 2. 判断并改造安装方式 | 当前 `git+ssh://...` 命令可用，但不是标准用户安装方式。标准方式应是 npm 包 `dsh-workbuddy-helper`；本机无 npm 发布凭据，已准备并验证 tarball 安装，npm 发布后的一行命令已写入 README |
-| 3. 专家数量与逆向专家核查 | 公开市场清单确为 429 个唯一专家、15 个分类；“软件逆向分析工程师”不在公开 429 条中，但本机 WorkBuddy 已安装专家 `rea-reverse-engineer` 的 profession 正是该名称，插件已能搜索并选择它 |
+| 本地专家是不是自定义的 | 不是。`rea-reverse-engineer`、`senior-fullstack-engineer`、`ai-agent-engineer` 的 WorkBuddy 市场 ID 分别是 `ex_QvM298ih8T8g`、`ex_ps4s7tycOR2g`、`ex_zYK6DThTcjqH`，都能在在线市场按 ID 查到 |
+| 公开市场能否找到截图里的专家 | 能。截图中的 9 位专家，7 位可精确命中名称，2 位只找到相近职业名（详见第 3 节） |
+| 429 是什么 | 是 CDN 上 `expert_center.json` 的条数，属于周期性**快照**，`lastUpdated=2026-08-18`；不是 App 的市场全量 |
+| 是不是找错了市场入口 | 是。App 实际调用 `POST https://www.workbuddy.cn/portal/operation-platform/market/expert/list`，需要账号 token；未过滤 `total_count=10000`，16 个分类 |
+| 插件是否已修正 | 已新增在线市场客户端，默认在线优先、快照兜底；ZIP 专家包、分类、详情、下载全部打通 |
+
+一句话：**上一版的 429 条没有错，但它是快照的子集；把它称为“公开市场全量”是错的。** 在线市场才是你在 WorkBuddy 里看到的列表。
 
 ---
 
-## 2. 迁移与改名
+## 2. 两个市场入口的实测差异
 
-### 2.1 仓库
-
-```text
-old: git@github.com:awswt/dsh-onversation-help.git
-new: git@github.com:awswt/dsh-workbuddy-helper.git
-```
-
-新仓库已推送 `main`，旧仓库保留为 `old-origin` remote，未删除历史。
-
-### 2.2 命名映射
-
-| 位置 | 修改前 | 修改后 |
-|---|---|---|
-| npm 包名 | `dsh-onversation-help` | `dsh-workbuddy-helper` |
-| bundle 行 id | `onversation-help` | `workbuddy-helper` |
-| 工具 | `onversation_help` | `workbuddy_helper` |
-| 命令 | `/onversation-help` | `/workbuddy-helper` |
-| 专家提示段 | `onversation-help:expert:<gen>` | `workbuddy-helper:expert:<gen>` |
-| 技能范围段 | `onversation-help:skill-scope:<gen>` | `workbuddy-helper:skill-scope:<gen>` |
-| 专家技能 provider | `onversation-help-expert-<gen>` | `workbuddy-helper-expert-<gen>` |
-| 全局技能过滤 provider | `onversation-help-filter-<gen>` | `workbuddy-helper-filter-<gen>` |
-| 错误码 | `ONVERSATION_HELP_*` | `WORKBUDDY_HELPER_*` |
-| 数据目录 | `$DSH_HOME/onversation-help` | `$DSH_HOME/workbuddy-helper` |
-| 设计文档 | `docs/dsh-onversation-help-design.md` | `docs/dsh-workbuddy-helper-design.md` |
-
-旧数据目录已复制到新目录，旧目录保留未删除：
-
-```bash
-cp -r ~/.dsh/onversation-help ~/.dsh/workbuddy-helper
-```
-
-新代码对旧 sidecar 中 `displayName` 为对象的情况做了兼容，恢复时统一转字符串。
-
----
-
-## 3. 安装命令判断与改造
-
-### 3.1 当前命令是否正确
-
-```bash
-dsh plugin --profile <profile> add git+ssh://git@github.com/awswt/dsh-onversation-help.git
-```
-
-结论：**技术上可用，但不适合作为面向他人的标准安装方式。**
-
-原因：
-
-1. 要求使用者本机配置 GitHub SSH key；
-2. 要求安装 Git 与 pnpm 的 Git 依赖构建链；
-3. 安装的是源码仓库，不是带版本号的发布产物；
-4. 无法用 npm semver 约束版本，也无法走 npm 镜像/缓存；
-5. 仓库改名后旧命令已经失效。
-
-它适合开发者拉最新源码，不适合最终用户。
-
-### 3.2 标准安装方式
-
-截图里的形式：
-
-```bash
-dsh plugin --profile web add dsh-expert-market
-```
-
-这是 npm 包名安装方式。对本项目，标准命令应为：
-
-```bash
-dsh plugin --profile <profile> add dsh-workbuddy-helper
-```
-
-前置条件是包已发布到 npm。当前机器：
+### 2.1 在线市场（App 实际使用）
 
 ```text
-npm whoami -> ENEEDAUTH
-registry.npmmirror.com/dsh-workbuddy-helper -> 404
+POST https://www.workbuddy.cn/portal/operation-platform/market/expert/list
+Authorization: Bearer <connector accessToken>
+Content-Type: application/json
+
+{"page":1,"page_size":100,"sort_by":"reco_rank","sort_order":"desc"}
 ```
 
-因此本次**没有执行 `npm publish`**，也不能声称 npm 命令现在已可用。仓库已补齐：
+实测：
 
-- `files` 白名单；
-- `publishConfig.access = public`；
-- `repository` / `homepage`；
-- `npm pack` 产物 `dist/dsh-workbuddy-helper-0.1.0.tgz`；
-- tarball 安装实测。
+| 项 | 值 |
+|---|---|
+| 无 token | HTTP 401，`invalid_token` |
+| 带 connector token | HTTP 200，`code=0` |
+| `total_count` | `10000` |
+| 分页 | 100 条/页；第 1–100 页有数据，第 101 页返回 0 条 |
+| 分类 | 16 个（`GET /portal/operation-platform/market/expert-categories`） |
+| 详情 | `POST /portal/operation-platform/market/expert/get-by-ids`，body `{expert_ids:[...], include_invisible:true}` |
+| 下载 | `POST /portal/operation-platform/market/expert/download-url` → 签名 ZIP，CDN `openplatform-cdn.codebuddy.cn` |
 
-维护者完成一次：
-
-```bash
-npm login
-npm publish
-```
-
-之后其他人即可使用：
-
-```bash
-dsh plugin --profile <profile> add dsh-workbuddy-helper
-```
-
-### 3.3 当前可用的无 GitHub 安装方式
-
-离线 tarball：
-
-```bash
-npm pack
-dsh plugin --profile <profile> add /absolute/path/to/dsh-workbuddy-helper-0.1.0.tgz
-```
-
-或把 tarball 放到任意 HTTPS 静态地址：
-
-```bash
-dsh plugin --profile <profile> add https://your-cdn.example.com/dsh-workbuddy-helper-0.1.0.tgz
-```
-
-已验证：
-
-- tarball 大小 47.3 kB；
-- 安装到全新 profile `workbuddy-helper-tgz2`；
-- 依赖解析为 `dsh-workbuddy-helper file:E:/.../dsh-workbuddy-helper-0.1.0.tgz`；
-- `--dump-config` 退出码 0，组合中出现 `dsh-workbuddy-helper` bundle 行；
-- 假模型端到端执行 `workbuddy_helper(action="connector")` 成功。
-
----
-
-## 4. 专家数量与“软件逆向分析工程师”核查
-
-### 4.1 公开市场清单
-
-来源：
+### 2.2 公开快照（CDN）
 
 ```text
-https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/expert-marketplace/expert_center.json
+GET https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/expert-marketplace/expert_center.json
 ```
-
-本次重新拉取结果：
 
 | 项 | 值 |
 |---|---|
@@ -160,88 +58,134 @@ https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/expert-marketplace/
 | 字节数 | 1,158,100 |
 | manifest version | `1.0.0` |
 | lastUpdated | `2026-08-18T03:00:00Z` |
-| experts 数组长度 | 429 |
-| 唯一 id 数 | 429 |
-| 重复 id | 0 |
+| experts | 429（唯一 id 429，无重复） |
 | categories | 15 |
 
-所以“429 个”是准确的，且不是重复计数。
+### 2.3 为什么上一版会错
 
-### 4.2 公开市场是否有“软件逆向分析工程师”
+上一版从 WorkBuddy 安装包里搜到了 `expert-marketplace` 这个 CDN 路径，验证了 200 与 429 条，就把它当成市场全量。实际上安装包里同时存在两套来源：
 
-对 429 条逐条搜索：
+- `expert_center.json`：离线快照 / builtin 兜底；
+- `/portal/operation-platform/market/*`：在线市场，渲染进程实际使用。
 
-| 关键词 | 命中数 |
-|---|---:|
-| `软件逆向分析工程师` | 0 |
-| `逆向分析` | 0 |
-| `软件逆向` | 0 |
-| `逆向工程` | 0 |
-| `reverse-engineer` | 0 |
-| `reverse engineer` | 0 |
+App 的专家页还会把“在线市场 + 已安装”合并显示，所以本机已安装专家在 UI 里看起来也像市场条目。数据源判断错，才会得出“429 条里没有逆向专家”的错误结论。
 
-结论：**公开 `expert_center.json` 的 429 条中没有“软件逆向分析工程师”。**
+---
 
-### 4.3 为什么 WorkBuddy 里能看到
+## 3. 截图中专家的逐一核对
 
-本机 WorkBuddy 已安装专家：
+用在线市场关键词接口逐条查询（2026-11-22）：
 
-```text
-~/.workbuddy/plugins/marketplaces/experts/plugins/rea-reverse-engineer
-```
+| 截图卡片 | 在线市场结果 | 结果 |
+|---|---|---|
+| 资深 Java 技术专家 | `ex_4e7cNzaTR1Id`，plugin `java-senior-dev` | 精确命中 |
+| 高级全栈工程师 | `ex_ps4s7tycOR2g`，plugin `senior-fullstack-engineer` | 精确命中；本机已安装 |
+| Java 后端开发工程师 | `ex_yO1NvwR8YHpP`，plugin `java-backend-engineer-wshbin`；另有 5 条同义 | 命中 |
+| Java 全栈架构师 | `ex_cCVrQDG9ERCw`，profession `资深Java全栈架构师` | 命中 |
+| 资深小程序全栈技术 | `ex_93kHtMBqaI0K`，profession `资深小程序全栈技术负责人` | 命中 |
+| Java 技术专家PRO | 未找到同名；`Java` 关键词 75 条中无 `PRO` 后缀 | 未精确命中 |
+| Java 讲师 / 后端架构师 | `ex_675KLIQp34I8`，profession 完全一致 | 精确命中 |
+| 资深平台架构与微服务 | 未找到同名；`资深平台` 30 条、`微服务` 79 条中无该名称 | 未精确命中 |
+| 资深后端开发专家 | `资深后端开发专家` 返回 12 条（PHP/ThinkPHP 等） | 命中同义职业名 |
 
-其 `.codebuddy-plugin/plugin.json`：
+说明：两张未精确命中的卡片可能是账号/企业范围内可见、名称带空格或版本后缀，或截图来自另一个账号的推荐位；这不影响“这些专家来自在线市场”的判断。
 
-```json
-{
-  "name": "rea-reverse-engineer",
-  "version": "1.0.0",
-  "displayName": { "zh": "REA 逆向功能分析专家", "en": "REA Reverse Engineer Anything Expert" },
-  "profession": { "zh": "软件逆向分析工程师", "en": "Software Reverse Engineering Analyst" },
-  "author": { "name": "mdit-lu", "email": "mdit-lu@example.com" },
-  "skills": ["./skills/rea-analysis"]
-}
-```
-
-安装时间：`2026-11-04T15:07:37.349Z`。
-
-WorkBuddy 的本地专家映射：
+### 3.1 “软件逆向分析工程师”
 
 ```text
-~/.workbuddy/app/cache/experts/expert-bundle-map.json
+keyword=软件逆向分析工程师 -> total=5
+ex_QvM298ih8T8g  REA 逆向功能分析专家
+                 profession: 软件逆向分析工程师
+                 plugin: rea-reverse-engineer
+                 version: 1.0.0
+                 use_count: 237361
+```
+
+同一关键词还返回：
+
+- `ex_tqxz6GGmspUV` 软件逆向专家
+- `ex_p6eSKdupTrOw` REA逆向软件工程师
+- `ex_RZjwzIDGU0bW` 逆向工程师
+- `ex_5HYwXIYZ7cGf` 可信软件生产专家
+
+`keyword=逆向` 返回 159 条。
+
+### 3.2 本机专家的来源证据
+
+`~/.workbuddy/app/cache/experts/expert-bundle-map.json`：
+
+```text
 ex_QvM298ih8T8g -> rea-reverse-engineer
+ex_ps4s7tycOR2g -> senior-fullstack-engineer
+ex_zYK6DThTcjqH -> ai-agent-engineer
 ```
 
-这说明你看到的是 WorkBuddy 的**已安装/自定义专家**（可能显示在“已安装/我的专家/自定义”分类），不是公开市场清单里的 429 条之一。它与“公开市场 429 条”并不矛盾，差别在数据源，不在计数。
+这三个 `ex_` ID 都能被在线市场的 `get-by-ids` 返回；429 条快照里三个都不存在。因此它们是**从在线市场安装的**，不是自定义专家。
 
-### 4.4 插件是否能看到并选中它
+---
 
-已把本地专家合并进 `workbuddy_helper` 的 `market` 搜索：
+## 4. 代码修正
 
-- 公开清单仍统计 429；
-- 本机专家统计 8；
-- `market query="逆向"` 会返回 `rea-reverse-engineer`，`source=local`；
-- `expert expertId="rea-reverse-engineer"` 可直接选中；
-- 技能为 `rea-analysis`。
+### 4.1 新增在线市场客户端
 
-宿主接线实测输出：
+`lib/portal.js`：
 
-```json
-{
-  "market": {
-    "publicTotal": 429,
-    "localTotal": 8,
-    "reverseFound": true
-  },
-  "reverseExpert": "REA 逆向功能分析专家",
-  "selectedExpert": "ai-agent-engineer",
-  "selectedSkills": ["agent-craft"],
-  "cleared": true,
-  "fiberDisposed": 2
-}
+- `listExperts({query,page,pageSize,categories,expertType})`
+- `marketSize()`：无关键词查一次 `page_size=1`，读全局 `total_count`，缓存 10 分钟
+- `categories()`
+- `getExpert(idOrSlug)`：`ex_` 走 `get-by-ids`，slug 先搜索再精确匹配
+- `downloadInfo(id)`：返回签名 URL，识别 ZIP
+- 鉴权：只从 connector / DSH 凭据解析，`Authorization: Bearer`，逐跳校验 host，401/403 直接报 `WORKBUDDY_HELPER_MARKET_AUTH_REQUIRED`
+
+`normalizePortalExpert()` 把在线市场字段映射成统一结构：
+
+```text
+expert_id       -> id / marketExpertId
+plugin_name     -> plugin
+agent_name      -> agentName
+display_name_zh -> displayName
+profession_zh   -> profession
+plugin_version  -> version
+icon            -> avatar
+categories      -> categories / categoryId
 ```
 
-所以数据差异已解释清楚：**公开市场 429 条不含它；本机已安装专家包含它；插件现在两者都能看到。**
+### 4.2 市场路由
+
+`lib/market.js` 现在有 `mode: auto | portal | cos`：
+
+- `auto`：先查在线市场；失败或没有账号时读快照，并在结果里带 `source` 与 `warning`；
+- `portal`：只查在线市场，失败即报错；
+- `cos`：只读快照，行为与旧版一致；
+- `getExpert`：在线优先，快照兜底；返回 `marketSource`、`bundleKind`；
+- `resolveBundle`：在线专家走 `download-url`（ZIP），快照专家走 `<baseUrl>/bundles/<plugin>.tar.gz`。
+
+### 4.3 解包支持 ZIP
+
+在线市场发的是 ZIP，快照是 tar.gz。`lib/bundle.js` 现在：
+
+- 新增 `fflate` 解 ZIP；
+- ZIP 与 tar 共用白名单：只允许 `.codebuddy-plugin/`、`.workbuddy-plugin/`、`agents/`、`skills/`、`avatars/`、`license/`、`README.md`；
+- 拒绝绝对路径、`..`、符号链接/硬链接、超条目数、超解压体积；
+- 兼容“平铺”和“单层目录包裹”两种包结构；
+- 缓存键加入版本号，避免升级后命中旧包。
+
+### 4.4 认证默认值
+
+- 默认 `authMode: auto`：有 connector 可用账号就用在线市场，没有就退回快照；
+- `workbuddy-connector` 是严格模式：没有 token 就报错；
+- connector `resolveToken()` 现在返回账号的 `auth.domain`，在线市场基址优先用它（`www.workbuddy.cn` 或 `www.workbuddy.ai`）；
+- token 只发给在线市场 API；签名 CDN 下载 URL 不带 `Authorization`；
+- 旧保护仍保留：显式把 connector token 配到公开快照 host 会被拒绝。
+
+### 4.5 搜索合并
+
+`market` 动作现在：
+
+- 在线市场返回 `installed: true/false`，与本机安装按 plugin 去重；
+- 只在本机存在、市场上没有的专家才作为 `source=local` 追加；
+- 返回 `source`、`marketTotal`、`matchedTotal`、`portalAvailable`、`warning`；
+- 新增 `categories` 动作。
 
 ---
 
@@ -253,7 +197,13 @@ ex_QvM298ih8T8g -> rea-reverse-engineer
 npm test
 ```
 
-结果：8/8 通过。覆盖提示词转义、HTTPS/host 允许列表、内联密钥拒绝、connector 只读解析、市场缓存与认证头、本地专家列表与解析、路径穿越。
+结果：**13/13 通过**。新增覆盖：
+
+- 在线市场字段映射；
+- `PortalMarket` 的 URL、Bearer 头、请求体、`get-by-ids`、分类；
+- 无账号 token 时的 `PORTAL_AUTH_REQUIRED`；
+- 在线优先、快照兜底的 `source` 与 `warning`；
+- ZIP 解包与 `../escape.txt` 拒绝。
 
 ### 5.2 宿主接线测试
 
@@ -263,7 +213,7 @@ ELECTRON_RUN_AS_NODE=1 "D:/Program Files/deepseek harness/DeepSeek Harness.exe" 
 test/host-integration.mjs
 ```
 
-结果：
+输出：
 
 ```json
 {
@@ -273,118 +223,158 @@ test/host-integration.mjs
   "connector": { "installed": true, "accounts": 3, "usable": 3 },
   "selectedExpert": "ai-agent-engineer",
   "selectedSkills": ["agent-craft"],
-  "market": { "publicTotal": 429, "localTotal": 8, "reverseFound": true },
+  "market": {
+    "source": "portal",
+    "publicTotal": 10000,
+    "localTotal": 8,
+    "reverseFound": true,
+    "reverseInstalled": true
+  },
   "reverseExpert": "REA 逆向功能分析专家",
   "cleared": true,
   "fiberDisposed": 2
 }
 ```
 
-覆盖：工具/命令注册、connector 查询、市场 + 本地合并搜索、两个专家连续切换、技能列表、`off` 清理、fiber 销毁。
+覆盖：工具/命令注册、connector、在线市场搜索、按 `ex_QvM298ih8T8g` 命中逆向专家、本地已安装标记、两个专家连续切换、`off` 清理、fiber 销毁。
 
-### 5.3 全新 profile 的 tarball 安装
+### 5.3 在线市场 ZIP 包真实解析
+
+```text
+expert: ex_QvM298ih8T8g
+download: 131,196 字节 ZIP
+plugin: rea-reverse-engineer 1.0.0
+prompt: 3,094 字符
+skills: rea-analysis
+warnings: []
+```
+
+证明在线市场的 ZIP 包能被安全解包、读取 `plugin.json`、提示词与技能，而不是只验证了列表接口。
+
+### 5.4 真实 DSH 端到端：选择一个“只在市场上”的专家
+
+为避免只测到本地副本，选择本机没有安装的 `ex_tqxz6GGmspUV`（软件逆向专家，plugin `reverse-engineer`）：
 
 ```bash
-dsh --profile workbuddy-helper-tgz2 --from-default-profile headless --dump-config
-dsh plugin --profile workbuddy-helper-tgz2 add \
-  E:/DSH/workspace/migrate/dist/dsh-workbuddy-helper-0.1.0.tgz（本地产物，未提交）
-dsh --profile workbuddy-helper-tgz2 --dump-config | grep -A 4 workbuddy-helper
+DSH_TEST_PROFILE=workbuddy-helper-market \
+DSH_TEST_EXPERT_ID=ex_tqxz6GGmspUV \
+node test/fake-model-expert-e2e.mjs
 ```
 
 结果：
+
+```text
+EXIT 0
+STDOUT EXPERT_TOOL_OK
+AFTER_TOOL_HAS_EXPERT_BLOCK true
+AFTER_TOOL_HAS_EXPERT_NAME true
+AFTER_TOOL_HAS_OBJECT_NAMESTRING false
+```
+
+会话 sidecar：
+
+```json
+{
+  "expert": {
+    "id": "ex_tqxz6GGmspUV",
+    "plugin": "reverse-engineer",
+    "version": "1.0.0",
+    "displayName": "软件逆向专家",
+    "source": "market",
+    "promptChars": 2653,
+    "promptTruncated": false
+  },
+  "skills": { "expertNames": ["rea-toolkit"] }
+}
+```
+
+这同时验证了：`ex_` ID 解析、ZIP 下载、解包、提示词注入、技能 provider、会话持久化。
+
+### 5.5 tarball 安装
+
+```bash
+npm pack
+dsh --profile <profile> --from-default-profile headless --dump-config
+dsh plugin --profile <profile> add /absolute/path/to/dsh-workbuddy-helper-0.1.0.tgz
+```
+
+结果：安装成功，`--dump-config` 退出码 0，组合中出现：
 
 ```yaml
 - id: workbuddy-helper
   name: dsh-workbuddy-helper
   config:
     enabled: true
-    authMode: none
+    marketMode: auto
+    authMode: auto
 ```
 
-假模型端到端：
+### 5.6 真实模型
 
-```text
-EXIT 0
-STDOUT: CONNECTOR_TOOL_OK
-tool_result: installed=true, version=5.30.0, accountCount=3, usableAccountCount=3, tokenAvailable=true
-```
+未执行：headless profile 没有 `DEEPSEEK_API_KEY`。工具管线、提示段、技能目录用本地 Messages 兼容假模型验证，不消耗真实额度。
 
-这证明 tarball 安装路径不依赖 GitHub，且插件在真实 DSH 中可执行。
+---
 
-### 5.4 新 GitHub 仓库安装验证
+## 6. 安装方式
+
+### 6.1 当前可用（不依赖 GitHub）
 
 ```bash
-dsh --profile workbuddy-helper-gh --from-default-profile headless --dump-config
-dsh plugin --profile workbuddy-helper-gh add \
-  git+ssh://git@github.com/awswt/dsh-workbuddy-helper.git
-dsh --profile workbuddy-helper-gh --dump-config | grep -A 4 workbuddy-helper
+npm pack
+dsh plugin --profile <profile> add /absolute/path/to/dsh-workbuddy-helper-0.1.0.tgz
 ```
 
-结果：
+或放到 HTTPS 静态地址：
 
-- 依赖解析为 `github:awswt/dsh-workbuddy-helper`；
-- `--dump-config` 退出码 0；
-- 组合中出现 `id: workbuddy-helper` / `name: dsh-workbuddy-helper`；
-- 假模型专家端到端：请求体积 318,626 → 349,354 字节，含 `<expert_selection>`、显示名“程枢”、技能目录含 `agent-craft`，无 `[object Object]`，退出码 0。
+```bash
+dsh plugin --profile <profile> add https://your-cdn.example.com/dsh-workbuddy-helper-0.1.0.tgz
+```
 
-### 5.5 真实模型
+### 6.2 npm 标准方式（发布后可用）
 
-未执行真实模型调用：headless profile 没有 `DEEPSEEK_API_KEY`，启动会在模型前报 `MISSING_CREDENTIAL`。本次用本地 Messages 兼容假模型验证了工具管线、专家提示段与技能目录，不消耗真实额度。
+```bash
+dsh plugin --profile <profile> add dsh-workbuddy-helper
+```
+
+当前本机 `npm whoami` 返回 `ENEEDAUTH`，包未发布，所以这条命令现在还不能用。维护者执行：
+
+```bash
+npm login
+npm publish
+```
+
+### 6.3 GitHub 方式（仅开发）
+
+```bash
+dsh plugin --profile <profile> add git+ssh://git@github.com/awswt/dsh-workbuddy-helper.git
+```
+
+需要 GitHub SSH、Git、pnpm Git 构建链，装的是源码而非版本化产物，只适合开发者。
 
 ---
 
-## 6. 本次修复的问题
+## 7. 限制
 
-| 问题 | 修复 |
-|---|---|
-| 包名/仓库/命令仍为旧名 | 全量替换为 `dsh-workbuddy-helper`、`workbuddy_helper`、`/workbuddy-helper` |
-| `market` 只查公开清单，看不到本机逆向专家 | 新增 `BundleStore.listLocal()`，`market` 合并公开 + 本地，结果带 `source` |
-| 旧 sidecar 的 `displayName` 是对象 | `normalizeState` 统一转字符串，兼容旧数据 |
-| 安装方式依赖 GitHub | 增加 `files`/`publishConfig`/`repository`，准备 npm 发布与 tarball 安装，并实测 tarball |
-| npm 包尚未发布 | 本机无 npm 凭据，README 明确写出发布步骤与当前可用替代方案 |
-
----
-
-## 7. 限制与后续
-
-1. **npm 发布未执行**：需要 `npm login` + `npm publish`；当前他人可用 tarball，不能用 npm 短命令。
-2. **没有 Web UI**：仍是工具 + 命令形态。
-3. **公开市场 vs 本地专家**：`market` 现在会同时返回两者，UI 需用 `source` 区分；公开总数固定 429，本地数量随安装变化。
-4. **逆向专家来源**：本机 `rea-reverse-engineer` 不是公开 429 条的一部分；如果 WorkBuddy 把它显示在“市场”而非“已安装”，那是 WorkBuddy 自己的分类语义，公开清单数据本身不含它。
-5. **真实模型未测**：人格服从度、真实 token 成本需配置 API key 后补测。
+1. 在线市场 `total_count` 恰为 `10000`，可能是平台上限而非绝对真实条数；第 101 页为空，可检索范围就是这 1 万条。
+2. 在线市场需要账号；没有账号时插件退回 429 条快照，并在结果里标注 `source=cos` 与 `warning`。
+3. 截图中 2 张卡片未精确命中名称，可能是账号/企业范围或显示名差异；其余 7 张可对应。
+4. 没有 Web UI，仍是工具 + 斜杠命令形态。
+5. 真实模型人格服从度未测。
+6. npm 包未发布。
 
 ---
 
-## 8. 仓库与提交
+## 8. 关键文件
 
 ```text
-git@github.com:awswt/dsh-workbuddy-helper.git
-main
-44f88d9 refactor: rename to dsh-workbuddy-helper and merge local experts into market search
-docs: rewrite migration and verification report（本报告提交见 main 最新提交）
-```
-
-旧仓库保留：
-
-```text
-old-origin git@github.com:awswt/dsh-onversation-help.git
-```
-
-关键文件：
-
-```text
-lib/index.js
-lib/session.js
-lib/session-plugin.js
-lib/skill-providers.js
-lib/market.js
-lib/bundle.js
-lib/connector.js
-lib/auth.js
-lib/util.js
-test/core.test.mjs
+lib/portal.js          # 新增：在线市场
+lib/market.js          # 在线优先 + 快照兜底
+lib/bundle.js          # ZIP + tar.gz 安全解包
+lib/auth.js            # auto 模式、domain 推导
+lib/connector.js       # resolveToken 返回 domain
+lib/index.js           # market/categories 动作、合并去重
+lib/session.js         # slug 优先本地、ex_ 走市场
+test/core.test.mjs     # 13 项单测
 test/host-integration.mjs
-dist/dsh-workbuddy-helper-0.1.0.tgz（本地产物，未提交）
-docs/dsh-workbuddy-helper-design.md
-docs/INSTALLATION-AND-TEST-REPORT.md
+cordis.patch.yml       # marketMode/authMode/portalBaseUrl 默认值
 ```

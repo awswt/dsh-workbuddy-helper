@@ -2,10 +2,26 @@
 
 DeepSeek Harness 插件：在当前会话内选择、切换、移除专家与技能，并把 WorkBuddy connector 的账号状态接入插件。
 
-- 专家来源：WorkBuddy 专家市场（远程）+ 本机已安装专家（离线）
+- 专家来源：WorkBuddy 在线市场（需要账号）+ 公开快照（离线兜底）+ 本机已安装专家
 - 技能：专家自带技能 + 当前全局技能，按会话启用/停用
 - 隔离：每个会话通过 `agent.ctx` 独立挂载，销毁即回滚；不写全局配置、不改技能文件
-- 身份：默认匿名访问公开市场；可选复用 `dsh-connect-workbuddy` 的账号池，或 DSH 凭据服务中的 token
+- 身份：默认 `auto`，优先复用 `dsh-connect-workbuddy` 的账号池访问在线市场；没有账号时退回公开快照
+
+## 两个市场入口（重要）
+
+WorkBuddy 有两条完全不同的数据源，条数差异很大：
+
+| 入口 | 地址 | 规模 | 是否需要登录 |
+|---|---|---|---|
+| 在线市场（App 实际使用） | `POST https://www.workbuddy.cn/portal/operation-platform/market/expert/list` | `total_count = 10000`，16 个分类 | 需要账号 token |
+| 公开快照（CDN 静态清单） | `https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/expert-marketplace/expert_center.json` | 429 个专家，15 个分类，`lastUpdated=2026-08-18` | 匿名可读 |
+
+在线市场才是 App 里看到的列表。公开快照只是周期性发布的子集：本机已安装的
+`rea-reverse-engineer`（REA 逆向功能分析专家 / 软件逆向分析工程师）和
+`senior-fullstack-engineer`（高级全栈工程师）都能在线市场按 ID 查到，但都不在 429 条快照里。
+
+插件默认 `marketMode: auto`：先查在线市场，失败或没有账号时退回快照，并在结果里返回
+`source: portal|cos` 与 `warning`，不会再把快照条数当成市场总量。
 
 ## 安装
 
@@ -69,15 +85,17 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-workbuddy-helper
 | `skills` | 列出全局技能与专家技能，以及当前启用状态 |
 | `set-skills` | 调整技能开关：`mode=all\|selected`、`names=a,b`、`expertNames=c,d` |
 | `connector` | WorkBuddy connector 检测结果、账号数量、可用账号数（不含 token） |
-| `market` | 搜索公开市场 + 本机已安装专家；结果带 `source=market\|local`，参数 `query` |
+| `market` | 搜索在线市场 + 本机已安装专家；结果带 `source=portal\|cos\|local`、`installed`、`marketTotal`，参数 `query` |
+| `categories` | 在线市场的 16 个分类（快照兜底时为快照分类） |
 
 示例：
 
 ```text
 workbuddy_helper(action="connector")
-workbuddy_helper(action="market", query="内容")
-workbuddy_helper(action="market", query="逆向")   # 可命中本机 rea-reverse-engineer
-workbuddy_helper(action="expert", expertId="ai-agent-engineer")
+workbuddy_helper(action="market", query="软件逆向分析工程师")
+workbuddy_helper(action="market", query="逆向")
+workbuddy_helper(action="expert", expertId="ex_QvM298ih8T8g")
+workbuddy_helper(action="expert", expertId="rea-reverse-engineer")
 workbuddy_helper(action="skills")
 workbuddy_helper(action="off")
 ```
@@ -103,7 +121,10 @@ workbuddy_helper(action="off")
       name: dsh-workbuddy-helper
       config:
         enabled: true
-        authMode: none
+        marketMode: auto
+        authMode: auto
+        portalBaseUrl: https://www.workbuddy.cn
+        portalPrefix: /portal
         marketBaseUrl: https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/expert-marketplace
         manifestPath: /expert_center.json
         timeoutMs: 20000
@@ -117,15 +138,18 @@ workbuddy_helper(action="off")
 | 字段 | 默认 | 说明 |
 |---|---|---|
 | `enabled` | `true` | 总开关 |
-| `authMode` | `none` | `none / bearer / header / cookie / workbuddy-connector` |
+| `marketMode` | `auto` | `auto`（在线优先，快照兜底） / `portal`（只在线） / `cos`（只快照） |
+| `authMode` | `auto` | `auto`（有 connector token 就用）/ `none` / `bearer` / `header` / `cookie` / `workbuddy-connector` |
 | `credentialRef` | `WB_EXPERT_TOKEN` | DSH 凭据服务中的键名，仅 `bearer/header/cookie` 使用 |
 | `headerName` | `Authorization` | 认证头名 |
 | `headerPrefix` | `Bearer ` | 认证头前缀 |
-| `connectorRegion` | 自动 | `cn / global`，仅 `workbuddy-connector` 使用 |
-| `marketBaseUrl` | WorkBuddy 市场 | 必须是 HTTPS，且在 `allowHosts` 内 |
-| `allowHosts` | 市场 host | 允许接收凭据的 host |
+| `connectorRegion` | 自动 | `cn / global`，仅 connector 模式使用 |
+| `portalBaseUrl` | `https://www.workbuddy.cn` | 在线市场基址；账号记录里的 `domain` 会覆盖它 |
+| `portalPrefix` | `/portal` | 在线市场路由前缀 |
+| `marketBaseUrl` | 公开快照基址 | 必须是 HTTPS，且在 `allowHosts` 内 |
+| `allowHosts` | 快照 + `www.workbuddy.cn` / `www.workbuddy.ai` / `openplatform-cdn.codebuddy.cn` | 允许接收凭据或下载的 host |
 | `allowInsecureLoopback` | `false` | 仅本地测试使用 |
-| `allowPublicMarketAuth` | `false` | 允许把 connector token 发到公开市场 host；默认拒绝，防止误配泄露 |
+| `allowPublicMarketAuth` | `false` | 允许把 connector token 发到公开快照 host；默认拒绝，防止误配泄露 |
 | `maxPromptChars` | `60000` | 专家提示词截断上限 |
 | `maxSelectedSkills` | `64` | 单会话技能上限 |
 | `dataDir` | `$DSH_HOME/workbuddy-helper` | sidecar 与缓存目录 |
@@ -143,9 +167,10 @@ $DSH_HOME/workbuddy-vault/<region>/<accountId>.json
 
 - `connector` 动作返回 `installed / profile / version / accountCount / usableAccountCount / accounts`；
 - 账号 id 与昵称做掩码，token 永远不出现在 `status()`；
-- 不刷新 token、不写 vault、不理解密；
-- `authMode: workbuddy-connector` 时，市场请求会使用第一个未过期账号的 `accessToken`，只发往 `allowHosts`；
-- 默认 `authMode: none`：公开市场不需要 token，避免把 WorkBuddy 凭据发给公共 COS。
+- 不刷新 token、不写 vault、不解密；
+- `authMode: auto`（默认）时，在线市场请求使用第一个未过期账号的 `accessToken`，基址取该账号的 `auth.domain`；
+- `authMode: workbuddy-connector` 是它的严格版本：没有可用 token 就报错，不会退回快照；
+- token 只会发往 `allowHosts` 内的 host，且只发给在线市场 API；签名 CDN 下载 URL 不带 Authorization 头。
 
 企业网关或需要鉴权的市场：
 
@@ -177,7 +202,7 @@ credentialRef: WB_EXPERT_TOKEN
 ## 安全
 
 - 专家包是数据，不是代码：只读 markdown/资源，不执行脚本，不 `npm install`。
-- 解包拒绝绝对路径、`..`、符号链接/硬链接，限制条目数与解压体积。
+- 解包拒绝绝对路径、`..`、符号链接/硬链接，限制条目数与解压体积；在线市场的 ZIP 与快照的 tar.gz 都走同一套白名单。
 - 专家提示词以 `<expert_selection>` 包裹，转义闭合标签，并声明不得覆盖安全规则、工具权限与危险操作确认。
 - 凭据只发往 allow-list 的 HTTPS host；重定向逐跳校验；错误与日志不包含 token。
 - 市场内容仍可能包含提示注入，权限系统与用户确认仍是最后防线，不承诺 100% 免疫。
@@ -204,7 +229,7 @@ npm install
 npm test
 ```
 
-当前测试覆盖：提示词转义、HTTPS/host 允许列表、内联密钥拒绝、WorkBuddy connector 只读解析、市场缓存与认证头、本机专家解析、路径穿越。
+当前测试覆盖：提示词转义、HTTPS/host 允许列表、内联密钥拒绝、WorkBuddy connector 只读解析、在线市场接口与 Bearer 头、在线优先/快照兜底、ZIP 与 tar 解包、路径穿越、本机专家解析。
 
 ### 手工端到端测试（假模型）
 
