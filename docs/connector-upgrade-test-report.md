@@ -199,6 +199,21 @@ node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin
 `WORKBUDDY_HELPER_PORTAL_AUTH_REQUIRED`。把真实 home 的 vault 复制进隔离 home（4 个账号文件）后立刻通过——
 这不是代码缺陷，而是"凭据跟着 `DSH_HOME` 走"的正确行为，已记入 AGENTS.md 陷阱 17。
 
+### 4.10 发布版复核（0.6.3 @ `e816d6f`）
+
+同一套探针在最终发布提交上复跑（新 profile `wbhelper-gh063`，`PROBE_PORT=9906`）：
+
+- 安装：`codeload .../tar.gz/e816d6f` → `Packages: +9`，3.6s，`version = 0.6.3`。
+- 连接器：`catalogTotal:134`、8 分类、`connectorUi.available:true`、`accounts.usableAccountCount:4`。
+- 技能市场 → 安装 → 进会话：`total:3437` → `ok:true`（落 `.dsh\skills\docx`）→ 下一轮 `globalMode:'all'` 9 条含 `docx`。
+- 专家：`expertBlock=true`、`applied:true`（`ai-agent-engineer@1.0.0`），后续 system 含专家正文。
+- 另有本轮修掉的热重载缺陷：`registerWebUi` 的上一轮 dispose 函数挂在 `webServer` 上，重载时先撤旧路由；
+  之前不带 `exact` 表的宿主会因"duplicate route"留下已 dispose 的 handler。`test/route-lifecycle.test.mjs`
+  现在断言重载后没有任何 `duplicate` 告警。
+
+连接器的"工具真的进会话"（27 → 39，12 个 `mcp__amap__*`）与"按会话停用真的生效"（39 → 27 → 39）证据不变，
+见 §4.4 / §4.5，那两段属于 0.6.0 工作树，本次未改动相关代码路径。
+
 
 ---
 
