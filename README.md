@@ -69,13 +69,13 @@ npm publish
 
 ```bash
 npm pack
-dsh plugin --profile <profile> add /absolute/path/to/dsh-workbuddy-helper-0.1.0.tgz
+dsh plugin --profile <profile> add /absolute/path/to/dsh-workbuddy-helper-0.2.7.tgz
 ```
 
 也可以把 tarball 放到任意 HTTPS 静态地址，再用 URL 安装：
 
 ```bash
-dsh plugin --profile <profile> add https://your-cdn.example.com/dsh-workbuddy-helper-0.1.0.tgz
+dsh plugin --profile <profile> add https://your-cdn.example.com/dsh-workbuddy-helper-0.2.7.tgz
 ```
 
 ### 从 GitHub 安装（仅开发调试）
