@@ -311,7 +311,23 @@ tool_result: installed=true, version=5.30.0, accountCount=3, usableAccountCount=
 
 这证明 tarball 安装路径不依赖 GitHub，且插件在真实 DSH 中可执行。
 
-### 5.4 真实模型
+### 5.4 新 GitHub 仓库安装验证
+
+```bash
+dsh --profile workbuddy-helper-gh --from-default-profile headless --dump-config
+dsh plugin --profile workbuddy-helper-gh add \
+  git+ssh://git@github.com/awswt/dsh-workbuddy-helper.git
+dsh --profile workbuddy-helper-gh --dump-config | grep -A 4 workbuddy-helper
+```
+
+结果：
+
+- 依赖解析为 `github:awswt/dsh-workbuddy-helper`；
+- `--dump-config` 退出码 0；
+- 组合中出现 `id: workbuddy-helper` / `name: dsh-workbuddy-helper`；
+- 假模型专家端到端：请求体积 318,626 → 349,354 字节，含 `<expert_selection>`、显示名“程枢”、技能目录含 `agent-craft`，无 `[object Object]`，退出码 0。
+
+### 5.5 真实模型
 
 未执行真实模型调用：headless profile 没有 `DEEPSEEK_API_KEY`，启动会在模型前报 `MISSING_CREDENTIAL`。本次用本地 Messages 兼容假模型验证了工具管线、专家提示段与技能目录，不消耗真实额度。
 
