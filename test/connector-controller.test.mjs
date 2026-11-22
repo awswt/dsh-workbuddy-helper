@@ -189,3 +189,42 @@ test('unknown connector ids are reported instead of silently created', async () 
   assert.match(String(result.error?.message ?? result.error), /does-not-exist/)
   controller.dispose()
 })
+
+test('recordUiOpen persists the jump so the state shows it across restarts', async () => {
+  const { controller, dataDir, catalogFile, profileDir } = await setup()
+  // 第一次：没有记录。
+  assert.equal((await controller.states('s1'))['key-api'].uiOpen, null)
+
+  const entry = await controller.recordUiOpen('key-api', { serverName: 'key_api', sessionId: 's1' })
+  assert.equal(entry.configId, 'key-api')
+  assert.equal(entry.serverName, 'key_api')
+  assert.equal(entry.sessionId, 's1')
+  assert.equal(entry.count, 1)
+  assert.equal(typeof entry.at, 'number')
+
+  // 计数累加而不是覆盖：用户可能反复去管理页。
+  const second = await controller.recordUiOpen('key-api', { serverName: 'key_api' })
+  assert.equal(second.count, 2)
+  const state = (await controller.states('s1'))['key-api']
+  assert.equal(state.uiOpen.count, 2)
+  // 埋点绝不能改变连接语义。
+  assert.equal(state.bound, false)
+  assert.equal(state.connected, false)
+  assert.equal(state.reason.code, 'unbound')
+
+  // 空 id 是无效输入，不写任何东西。
+  assert.equal(await controller.recordUiOpen('', {}), null)
+
+  // 落盘后可被新进程读回（模拟重启）。
+  const store = JSON.parse(await fs.readFile(path.join(dataDir, 'connectors.json'), 'utf8'))
+  assert.equal(store.uiOpens['key-api'].count, 2)
+  controller.dispose()
+
+  const fresh = createConnectorController(
+    { get: name => (name === 'tools' ? fakeToolsService([]) : undefined) },
+    { dataDir, patchFile: path.join(profileDir, 'cordis.patch.yml'), catalogFile },
+  )
+  const reloaded = (await fresh.states('s1'))['key-api']
+  assert.equal(reloaded.uiOpen.count, 2, 'uiOpen must survive a controller restart')
+  fresh.dispose()
+})

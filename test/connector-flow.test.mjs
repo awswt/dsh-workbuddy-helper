@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   CONNECT_ACTIONS,
+  connectorUiHint,
+  connectorUiUrl,
   createOperationRegistry,
   describeConnectorError,
   normalizeConnectResult,
@@ -114,4 +116,32 @@ test('token and OAuth actions carry what the UI needs to finish the connect', ()
   assert.equal(handoff.url, 'https://mcp-connector/ui')
   assert.equal(handoff.nextAction, 'redirect')
   assert.equal(handoff.expireAt, 1795355999999)
+})
+
+test('connectorUiUrl writes the connector identity and never fakes a deep link', () => {
+  const url = connectorUiUrl({ serverName: 'amap', configId: 'amap' })
+  // 管理页只认 uiLocale/locale，所以这里只保证"我们带了可观测的标识"，不假装能定位。
+  assert.equal(url, '/mcp-connector/ui?serverName=amap&connector=amap&from=dsh-workbuddy-helper')
+  assert.equal(
+    connectorUiUrl({}),
+    '/mcp-connector/ui?from=dsh-workbuddy-helper',
+    'empty values must not add blank query parameters',
+  )
+  assert.equal(
+    connectorUiUrl({ base: '/mcp-connector/ui', serverName: 'amap', from: 'panel' }),
+    '/mcp-connector/ui?serverName=amap&from=panel',
+  )
+})
+
+test('connectorUiHint names the connector and its server so the user can search it', () => {
+  assert.equal(
+    connectorUiHint({ id: 'amap', name: '高德地图' }, { external: { serverName: 'amap' } }),
+    '在管理页搜索「高德地图」（server: amap）完成授权或断开',
+  )
+  assert.equal(
+    connectorUiHint({ id: 'amap', name: '高德地图' }, null),
+    '在管理页搜索「高德地图」完成授权或断开',
+    'a catalog-only config has no serverName yet',
+  )
+  assert.equal(connectorUiHint({}, null), '在管理页搜索「」完成授权或断开')
 })

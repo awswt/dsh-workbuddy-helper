@@ -1,6 +1,6 @@
 {
   "name": "dsh-workbuddy-helper",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "Session assistant for DeepSeek Harness: expert picker, per-session skills/connector gating, WorkBuddy skill & connector markets, composer panel.",
   "type": "module",
   "main": "lib/index.js",
@@ -9,6 +9,10 @@
     "./client": "./lib/client.js",
     "./auth": "./lib/auth.js",
     "./connector": "./lib/connector.js",
+    "./connectors": "./lib/connectors.js",
+    "./connector-flow": "./lib/connector-flow.js",
+    "./mcp-patch": "./lib/mcp-patch.js",
+    "./skill-install": "./lib/skill-install.js",
     "./market": "./lib/market.js",
     "./portal": "./lib/portal.js",
     "./bundle": "./lib/bundle.js",
@@ -34,7 +38,9 @@
     "yaml": "^2.9.0"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "e2e": "node scripts/e2e.mjs",
+    "release": "node scripts/release.mjs"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -55,6 +61,7 @@
   "homepage": "https://github.com/awswt/dsh-workbuddy-helper",
   "files": [
     "lib",
+    "scripts",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",

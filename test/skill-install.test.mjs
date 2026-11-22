@@ -12,6 +12,7 @@ import {
   parseSkillFrontmatter,
   projectRootOf,
   skillSlug,
+  withInstallLock,
 } from '../lib/skill-install.js'
 
 const CDN_HOST = 'cdn.example.com'
@@ -377,4 +378,78 @@ test('installSkill targets the git project root, which is what the loader scans'
   assert.equal(result.installed.path, path.join(repo, '.dsh', 'skills', 'docx'))
   await assert.rejects(fs.stat(path.join(nested, '.dsh')), /ENOENT/, 'never install into a directory the loader skips')
   assert.deepEqual((await listInstalledSkills(nested)).map(skill => skill.slug), ['docx'])
+})
+
+test('withInstallLock serializes callers that share a lock key', async () => {
+  const order = []
+  const slow = withInstallLock('demo', async () => {
+    order.push('a-start')
+    await new Promise(resolve => setTimeout(resolve, 40))
+    order.push('a-end')
+    return 'a'
+  })
+  const fast = withInstallLock('demo', async () => {
+    order.push('b-start')
+    order.push('b-end')
+    return 'b'
+  })
+  assert.deepEqual(await Promise.all([slow, fast]), ['a', 'b'])
+  // B must not start before A finished, otherwise the two installs interleave.
+  assert.deepEqual(order, ['a-start', 'a-end', 'b-start', 'b-end'])
+})
+
+test('withInstallLock keeps the queue alive after a rejection', async () => {
+  await assert.rejects(
+    withInstallLock('demo', async () => { throw new Error('boom') }),
+    /boom/,
+  )
+  assert.equal(await withInstallLock('demo', async () => 'after'), 'after')
+})
+
+test('withInstallLock breaks a stale lock directory instead of hanging', async () => {
+  const root = await workspace()
+  const lockDir = path.join(root, '.lock-demo')
+  await fs.mkdir(lockDir, { recursive: true })
+  const old = new Date(Date.now() - 10 * 60 * 1000)
+  await fs.utimes(lockDir, old, old)
+
+  const value = await withInstallLock('demo', async () => 'ran', { lockDir, lockStaleMs: 1000 })
+  assert.equal(value, 'ran')
+  // 释放后锁目录必须消失，否则下一次安装会被自己的残骸挡住。
+  await assert.rejects(fs.stat(lockDir), /ENOENT/)
+})
+
+test('withInstallLock refuses to wait forever on a live lock', async () => {
+  const root = await workspace()
+  const lockDir = path.join(root, '.lock-demo')
+  await fs.mkdir(lockDir, { recursive: true })
+
+  await assert.rejects(
+    withInstallLock('demo', async () => 'never', { lockDir, lockTimeoutMs: 120, lockStaleMs: 600000 }),
+    /another skill install is still running/,
+  )
+})
+
+test('two concurrent installs of one skill leave a complete directory', async () => {
+  const root = await workspace()
+  const bytes = packageBytes({
+    'word-docx/SKILL.md': SKILL_MD,
+    'word-docx/references/checklist.md': '- 标题层级\n',
+  })
+  const build = () => installSkill({
+    portal: fakePortal({ skill_id: 'skill_1', name: 'word-docx', download_url: DOWNLOAD_URL }),
+    skillId: 'skill_1',
+    workspace: root,
+    allowHosts: [CDN_HOST],
+    fetchImpl: fakeFetch(bytes),
+  })
+  const [first, second] = await Promise.all([build(), build()])
+  assert.equal(first.installed.path, second.installed.path)
+  assert.deepEqual((await listInstalledSkills(root)).map(skill => skill.slug), ['word-docx'])
+  // 内容必须完整：并发只允许"后到者覆盖先到者"，不允许互相删掉文件。
+  assert.deepEqual(first.files.sort(), ['SKILL.md', 'references/checklist.md'])
+  assert.deepEqual(second.files.sort(), ['SKILL.md', 'references/checklist.md'])
+  const skillsRootDir = path.join(root, '.dsh', 'skills')
+  const left = (await fs.readdir(skillsRootDir)).filter(name => name.startsWith('.'))
+  assert.deepEqual(left, [], 'no .staging-* or .lock-* leftovers')
 })

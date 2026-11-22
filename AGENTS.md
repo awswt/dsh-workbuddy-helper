@@ -1,4 +1,4 @@
-# AGENTS.md — dsh-workbuddy-helper 开发与运维手册
+﻿# AGENTS.md — dsh-workbuddy-helper 开发与运维手册
 
 给在本仓库工作的 AI Agent 与人看的操作手册。改代码前先读完「陷阱清单」，那里的每一条都是踩过的坑。
 
@@ -62,19 +62,35 @@ scripts/release.mjs  版本 bump → 测试 → commit → push 一条龙。
 
 装完无需重启：技能文件系统有 `watch`。但**改后端代码要重启 DSH**——`webServer.register` 只在插件激活时执行，运行中的进程不会因为文件变化多出路由（陷阱 5）。
 
+**并发必须串行**：两次装同一个 slug 会交错 `rm(target)` 与 `rename(staging, target)`，可能留下半成品或丢掉对方的文件。`withInstallLock()` 是双层的：进程内按 target 路径排队（`installQueues`），跨进程用 `<skillsRoot>/.lock-<slug>` 目录做互斥（`mkdir` 是唯一在 Win/macOS/Linux 上都原子失败的创建原语）。锁目录 dot 前缀所以 `listInstalledSkills` 会跳过；超过 `LOCK_STALE_MS`（5 分钟）的残留锁会被打破，避免崩过的进程永久挡住后续安装（陷阱 18）。
+
+## 4.1 连接器管理页跳转（`lib/connector-flow.js` + `recordUiOpen`）
+
+`dsh-mcp-connector` 的 UI **只读** `location.search` 的 `uiLocale` / `locale`（`ui/index.html:1235`、`:1252`），不支持 `?connector=<id>` 深链。所以本插件不做假深链：
+
+- `connectorUiUrl()` 只拼可观测的查询参数（`serverName` / `connector` / `from`），返回相对路径；
+- `connectorUiHint()` 生成"去管理页搜索「名字」（server: xxx）"的提示，因为用户只能靠搜索定位；
+- 点按钮先 POST `connectors/action { action: 'openConnectorUi' }`，服务端 `recordUiOpen()` 把 `{configId, serverName, sessionId, count, at}` 记进**本插件自己的** store（`store.uiOpens`，不写对方的表），再返回 `url` / `hint` / `state`；
+- `state.uiOpen` 因此能显示"已去过管理页 N 次"，面板按钮变成「再次打开管理页」。这条记录**不参与** connected 判定。
+
 ## 5. 验证
 
 ```powershell
-node --test test/*.test.mjs          # 92 条，必须全绿
+node --test test/*.test.mjs          # 100 条，必须全绿
 node --check lib/<file>.js           # 改完随手检
 ```
 
-端到端（假模型 + 真 headless 会话）：
+端到端（假模型 + 真 headless 会话，一条命令）：
 
 ```powershell
-$env:DSH_HOME="E:\DSH\workspace\migrate\.workbuddy\probe\dshhome"
-node .workbuddy\probe\probe-multi.mjs      # 见 docs/e2e-baseline.md §4 的复现清单
+node scripts/e2e.mjs                     # 从 GitHub 装，跑全套
+node scripts/e2e.mjs --source local      # 装工作树（改完代码先跑这个）
+node scripts/e2e.mjs --plan connector-only --verbose
 ```
+
+退出码 0 才算通过，结论在 `.workbuddy/e2e/run/report.json`。它自己建隔离 home、复制真 home 的
+连接器目录（**不含** `connections`/`grants`，那是真实凭据）、写 profile bundles、跑 dump-config 与假模型会话。
+细节与"为什么必须这样"见 `docs/e2e-baseline.md` §4。
 
 打包安装（**每轮换新目录**，否则 pnpm 报 `Already up to date` 装的是旧内容）：
 
@@ -110,6 +126,9 @@ node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin
 15. `mcp_connector.json` 在 `$DSH_HOME/storages/`，不在 profile 下；`tables.connections` 与 `tables.grants` 是 key → record 的 map，不是数组。
 16. Windows 上 `bz e` 解 7z 会静默成功但不出文件；用自带 `tar -xf app-64.7z -C <dir> <pattern>`（支持 glob，但**不支持** `--wildcards`）。
 17. 凭据跟着 `DSH_HOME` 走：隔离 home 里没有 `workbuddy-vault/`，portal 的三个动作会统一报 `WORKBUDDY_HELPER_PORTAL_AUTH_REQUIRED`。要在隔离环境里跑端到端，先把真实 home 的 `workbuddy-vault/` 复制过去（4 个账号文件），别去改代码。
+18. 技能安装的锁目录建在 `<skillsRoot>` 里，所以**必须先 `mkdir(root)` 再上锁**：首次安装时 `.dsh/skills` 还不存在，直接 `mkdir(<root>/.lock-<slug>)` 会 `ENOENT`。另外锁必须是"目录 + 过期时间"而不是纯进程内队列，因为面板与 `workbuddy_helper` 工具可能来自不同进程。
+19. 隔离 home 里 `storages/mcp_connector.json` 不存在 → `catalogTotal` 是 0。这**不是**插件 bug（`scripts/e2e.mjs` 会从真 home 复制目录表，但故意丢掉 `connections`/`grants`）。写断言前先看目录是不是空的。
+20. `dsh-mcp-connector` 的管理页**只读** `uiLocale`/`locale` 两个查询参数，`?connector=<id>` 不会被解析。任何"跳过去自动定位到某一行"的实现都是假的；只能记录跳转 + 提示用户搜索（§4.1）。
 
 ## 8. 边界
 

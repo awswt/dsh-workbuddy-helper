@@ -313,20 +313,42 @@ skills: [agent-craft]
 
 ## 4. 复现清单（从零到证据）
 
+一条命令。脚本自己建隔离 home、装插件、写 profile bundles、跑 `--dump-config`、起假模型、
+跑真 headless 会话，最后按检查项给结论并写 `report.json`：
+
 ```powershell
-# 1) 隔离 home + 装 GitHub 最新
+cd E:\DSH\workspace\migrate
+node scripts/e2e.mjs                      # 从 GitHub 装，跑全套（连接器/技能/专家）
+node scripts/e2e.mjs --source local       # 装工作树（改完代码先跑这个）
+node scripts/e2e.mjs --plan connector-only --verbose
+node scripts/e2e.mjs --keep-home          # 留下隔离 home 供排查
+```
+
+`--help` 有全部参数。退出码 0 才代表全部检查通过；机器可读结论在
+`.workbuddy/e2e/run/report.json`（每个请求的原始 body 在 `requests/`）。
+
+脚本做的几件容易踩错的事，都在代码里写明了原因：
+
+| 行为 | 为什么必须这样 |
+|---|---|
+| 只复制真 home 的 `tables.catalog.remote.connectors`，丢掉 `connections` / `grants` | 隔离 home 一开始没有目录，`catalogTotal` 会是 0（与本插件无关的假失败）；但 `connections`/`grants` 是真实凭据，复制进去会让隔离环境看起来"已连接" |
+| 用 node 写 profile `package.json` | PowerShell 5.1 的 `Set-Content -Encoding utf8` 带 BOM，`--dump-config` 直接失败 |
+| `patchReload: 'live'` | 目录连接器写进 patch 后要能挂载，才观察得到"连接 → 工具出现" |
+| 假模型说 OpenAI Chat Completions 方言 | 本 build 收到 Anthropic 事件形状会 `STREAM_CLOSED` |
+| 技能目录从**所有消息**里找 `<available_skills>` | 它是 `dsh-tool-skill` 注入的独立 user 消息，不在 system prompt 里 |
+| 专家 block 只在"下一轮"请求里断言 | persona 注入发生在那次工具调用之后；单请求会话本来就不该有 |
+
+需要凭据的市场动作（技能安装、WorkBuddy 连接器市场）要加 `--token-vault`，
+它把真 home 的 `workbuddy-vault/` 复制进隔离 home；不加则该类动作如实报 `AUTH_REQUIRED`。
+
+### 4.1 历史手写流程（已由上面的脚本取代，保留作为对照）
+
+```powershell
 $cli = "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin.js"
 $env:DSH_HOME = "E:\DSH\workspace\migrate\.workbuddy\probe\dshhome"
 node $cli plugin --profile wbhelper-base add git+https://github.com/awswt/dsh-workbuddy-helper.git
-
-# 2) 把 headless app 加进 profile bundles（用 node 写，别用 Set-Content，见 §5.4）
-#    dsh.profile.bundles = ["@deepseek-ai/dsh-base","@deepseek-ai/dsh-headless","dsh-workbuddy-helper"]
-
-# 3) 验证配置层
+# dsh.profile.bundles = ["@deepseek-ai/dsh-base","@deepseek-ai/dsh-headless","dsh-workbuddy-helper"]
 node $cli --profile wbhelper-base --dump-config | Select-String 'workbuddy-helper|headless-runner'
-
-# 4) 一体化取证（假模型 + 真 headless 会话）
-cd E:\DSH\workspace\migrate
 node .workbuddy\probe\probe-multi.mjs
 ```
 
