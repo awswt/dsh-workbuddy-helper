@@ -11,3 +11,5 @@ package-lock.json
 dist/
 
 WorkBuddy.exe
+app-64.7z
+.dsh/

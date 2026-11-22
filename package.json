@@ -1,6 +1,6 @@
 {
   "name": "dsh-workbuddy-helper",
-  "version": "0.5.0",
+  "version": "0.6.1",
   "description": "Session assistant for DeepSeek Harness: expert picker, per-session skills/connector gating, WorkBuddy skill & connector markets, composer panel.",
   "type": "module",
   "main": "lib/index.js",
@@ -60,6 +60,9 @@
     "LICENSE",
     "docs/INSTALLATION-AND-TEST-REPORT.md",
     "docs/dsh-workbuddy-helper-design.md",
+    "docs/workbuddy-connector-reverse-engineering.md",
+    "docs/e2e-baseline.md",
+    "docs/connector-upgrade-test-report.md",
     "docs/ui-*.png"
   ],
   "publishConfig": {

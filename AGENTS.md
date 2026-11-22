@@ -1,0 +1,117 @@
+# AGENTS.md — dsh-workbuddy-helper 开发与运维手册
+
+给在本仓库工作的 AI Agent 与人看的操作手册。改代码前先读完「陷阱清单」，那里的每一条都是踩过的坑。
+
+## 1. 这个插件是什么
+
+`dsh-workbuddy-helper` 是 DSH（DeepSeek Harness）的一个插件，把 **WorkBuddy 的三个市场**接进 DSH 会话：
+
+| 市场 | 入口 | 效果 |
+|---|---|---|
+| 专家 | `workbuddy_helper { action: 'expert', expertId }` / 会话辅助面板「专家」页 | 把专家包的 `AGENTS` 正文注入当前会话的 system prompt，并把专家自带技能并入技能目录 |
+| 技能 | 「技能」页 → 真实安装；`workbuddy_helper { action: 'skills', skillAction: 'install', skillId }` | 从 WorkBuddy 技能市场下载 zip，解到 `<projectRoot>/.dsh/skills/<slug>/`，下一轮即可见 |
+| 连接器 | 「连接器」页；`workbuddy_helper { action: 'connector', connectorAction: ... }` | 134 条 MCP 连接器目录 → 连接 → 工具以 `mcp__<server>__*` 进入会话，并按会话启用/停用 |
+
+核心约束：**所有选择都是会话级的**。插件不写全局配置、不替别的会话做决定；唯一会落盘到 profile 的是连接器要用的 `cordis.patch.yml`（MCP server 声明）。
+
+## 2. 目录与职责
+
+```
+lib/index.js         插件入口：export name/inject/apply，注册工具 workbuddy_helper、命令、
+                     会话钩子，构造各子系统。connectors.init() 必须调用，否则会话门控不注册。
+lib/connectors.js    连接器注册表 + 连接动作 + 会话级工具门控（WorkBuddy 语义那一版）。
+lib/connector-flow.js 连接流程纯函数：单飞 registry、结果归一、错误分类、凭据表单、OAuth 交接。
+lib/mcp-patch.js     cordis.patch.yml 的 MCP 条目读写（vendored dsh-armory 约定，带注释保留）。
+lib/skill-install.js 技能真实安装：目录查询 → 签名 URL → zip 校验 → 原子落盘到 .dsh/skills。
+lib/portal.js        WorkBuddy portal 客户端（市场/技能/连接器目录接口）。
+lib/market.js        专家市场（COS 快照 + 实时接口）。
+lib/session.js       会话选择状态（专家、技能开关）与 prompt 注入。
+lib/webui.js         面板 HTTP 路由（状态、目录、动作、技能安装）。
+lib/client.js        浏览器端 UI（React，无构建，通过宿主注入的 h/React）。
+lib/auth.js          凭据解析、URL 白名单、错误类型。
+lib/bundle.js        专家包下载与解包。
+lib/util.js          dshHome、expandHome 等小工具。
+test/*.test.mjs      node:test 单测，全部用假 portal / 假 fetch / 临时目录。
+docs/                设计、逆向、端到端与连接器改造报告。
+scripts/release.mjs  版本 bump → 测试 → commit → push 一条龙。
+```
+
+## 3. 连接器模型（改这里之前必须理解）
+
+三个概念，别混：
+
+- **config**（静态）：来自 `$DSH_HOME/storages/mcp_connector.json` 的 `tables.catalog.remote.connectors`（134 条），或本 profile 已装的连接器插件。字段 `id/name/auth/servers`。
+- **state**（运行时）：`{configId, source, bound, enabled, connected, connecting, pending, reason, toolCount, tools, authMode, credentialReady, external?}`。**UI 只读 state**。
+  - `connected` 的唯一判据是「宿主当前真的注册了这些工具」，不是「我们写过配置」。工具枚举走 `tools.schemas()`（**没有** `definitions()`，见陷阱 1）。
+  - `reason.code` ∈ `disabled | session-disabled | no-tools | unbound | restart-required | authorize | error`。
+- **action**：`connect | repairConnect | reauthorize | disconnect | unbind | cancelConnect | updateHeaders | updateEnv`，同一 id 单飞（`operations.claim`，opId = `id#seq`，过期请求 `cancelled`）。
+
+三条落地路径：
+
+1. **目录连接器**（catalog）：连接时把 server 写进 `cordis.patch.yml` 的 `- insert:` 段（`id: mcp-<serverName>`、`name: "@deepseek-ai/dsh-mcp-client"`）。写盘后要**重启 DSH** 才挂载，所以这一阶段状态是 `connecting` + `reason: restart-required`，不假装已连接。
+2. **插件连接器**（plugin）：工具已由宿主注册，连接只是把 id 从会话 deny 集合里移除。
+3. **连接器管理页**（`dsh-mcp-connector` 的 `/mcp-connector/ui`）：连接与 OAuth 授权都在那套实现里（`storages/mcp_connector.json` 的 `tables.connections` + `tables.grants`，外加 `storages/mcp_connector_grants_v1/*.json` 跨进程日志）。本插件**只读**这份状态（`readSharedConnectorState`），把「管理页已连接」显示成 `source: 'shared'` + `external` 块，并拒绝重复写 patch、拒绝假装能断开/解绑。桥接的缓存 TTL 是 5s。
+
+会话门控：`applyToAgent(agent)` → `agent.ctx.get('tools').restrict({ deny })`。`restrict` **必须**作用在 scoped context，否则宿主直接抛错（陷阱 2）。每个 agent 一条 promise 队列（`applyQueue`），因为 `setSession()` 自己会触发 `reapply()`，用布尔锁会把紧随其后的那次调用静默丢掉（陷阱 3）。
+
+## 4. 技能真实安装
+
+链路：`skill/list` 或 `skill/get-by-ids` → `download_url`（已签名 CDN，约 24h）→ 下载 zip → 校验 `fingerprint`（= zip 的 sha256，形状是裸 64 位 hex 时才强校验）→ 去外层目录（也有平铺包）→ 拒绝绝对路径与 `..` → 必须有 `SKILL.md` → 写 `.staging-*` 再 `rm` + `rename` 原子替换。
+
+**根目录不是 cwd**：DSH 的 `dsh-skill-filesystem` 用「向上第一个含 `.git` 的目录」当 projectRoot，扫 `<projectRoot>/.dsh/skills`（`src/index.ts:937-947`、`:241-260`）。所以 `projectRootOf()` 必须先把 workspace 归一到 repo 根，否则技能装成功却永远不出现在 `<available_skills>`（陷阱 4）。
+
+装完无需重启：技能文件系统有 `watch`。但**改后端代码要重启 DSH**——`webServer.register` 只在插件激活时执行，运行中的进程不会因为文件变化多出路由（陷阱 5）。
+
+## 5. 验证
+
+```powershell
+node --test test/*.test.mjs          # 92 条，必须全绿
+node --check lib/<file>.js           # 改完随手检
+```
+
+端到端（假模型 + 真 headless 会话）：
+
+```powershell
+$env:DSH_HOME="E:\DSH\workspace\migrate\.workbuddy\probe\dshhome"
+node .workbuddy\probe\probe-multi.mjs      # 见 docs/e2e-baseline.md §4 的复现清单
+```
+
+打包安装（**每轮换新目录**，否则 pnpm 报 `Already up to date` 装的是旧内容）：
+
+```powershell
+npm pack --pack-destination .workbuddy\probe\pack-vN
+node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin.js" `
+  plugin --profile <profile> add "file:E:/DSH/workspace/migrate/.workbuddy/probe/pack-vN/dsh-workbuddy-helper-<ver>.tgz"
+```
+
+## 6. 发布纪律
+
+每完成一处改动：`node scripts/release.mjs`（= bump patch 版 + 跑测试 + commit + push）。要 minor/major 用 `--minor` / `--major`；只想看会做什么用 `--dry-run`。
+
+- 版本号是唯一可信的"这份代码是新的"标志，但它**不等于内容**：同版本号的 tgz 与 git 提交可能不同（历史上 0.5.0 就出现过 14165B vs 13793B），所以验证装进去的东西要 grep 特征串，别只看 version。
+- `.gitignore` 必须挡住 `app-64.7z`（441MB 安装器）、`.workbuddy/`（逆向与探针产物）、`.dsh/`（装进来的技能）。
+
+## 7. 陷阱清单（都是真踩过的）
+
+1. 宿主 `@deepseek-ai/dsh-tools` 的 Tools 类**没有** `definitions()`。枚举工具用 `schemas()`（省略 scope = 全局视图，返回带 `name` 的模型侧 schema）。早期版本靠 `definitions()` 导致 `toolCount` 恒 0、连接器永远显示"未连接"。
+2. `tools.restrict()` 要求 scoped context（`agent.ctx`）。上下文全局的 restrict 会屏蔽所有 agent，宿主直接抛错。
+3. 用布尔 `applying` 做并发保护会丢更新，必须 per-agent promise 队列。
+4. 技能装到非 projectRoot 目录 = 装成功但不显示。
+5. 改后端路由必须重启 DSH；只有技能文件是热加载。
+6. `parsePatch` 遇到空文件 `[]` 是 flow 序列，往里塞条目会写成 `{ insert: [...] }`；必须先把空序列转 block 风格，patch 才是可 review 的 diff。
+7. 目录里 `servers[0]` 有三形状：`streamable-http + url`（88 条）、`stdio + command/args/env`（45 条）、`streamable-http + headerCredentialBindings`（1 条）。只支持 url 会让 45 条连接器全线报错。
+8. 凭据字段来自 `auth.credentialFields`（如 amap 的 `apiKey`），`credentialBindings` 决定它落 env 还是 header。
+9. `disconnect` 不能复用 `success` 分支，否则 UI 把"已断开"显示成"已连接"——`normalizeConnectResult` 有独立 `disconnected` 终态。
+10. `state.reason` 只在 `stateOf()` 里，`connect()` 的返回没有 `reason`，别在测试里断言错层级。
+11. `yaml.stringify` 给含 `@` 的标量加双引号，断言写 `/name: ['"]?@deepseek-ai\/dsh-mcp-client['"]?/`。
+12. PowerShell 5.1 `Set-Content -Encoding utf8` 写 profile `package.json` 会带 BOM，`--dump-config` 直接失败；用 node 写，读 UTF-8 加 `-Encoding UTF8`。
+13. 假模型必须说 **OpenAI Chat Completions** 方言（`POST /chat/completions` + SSE `data: {...}` … `data: [DONE]`）。Anthropic 事件形状在本 build 会 `STREAM_CLOSED`。
+14. 技能目录不在 system prompt 里：它是 `@deepseek-ai/dsh-tool-skill` 注入的**独立 user 消息** `<available_skills>`。断言技能可见性别只 grep system。
+15. `mcp_connector.json` 在 `$DSH_HOME/storages/`，不在 profile 下；`tables.connections` 与 `tables.grants` 是 key → record 的 map，不是数组。
+16. Windows 上 `bz e` 解 7z 会静默成功但不出文件；用自带 `tar -xf app-64.7z -C <dir> <pattern>`（支持 glob，但**不支持** `--wildcards`）。
+
+## 8. 边界
+
+- 技能市场是 UGC：`SKILL.md` 会进入模型上下文，包内 `scripts/*.py` 可能被执行。所以下载 URL 必须过 host 白名单，`fingerprint` 能校验就校验。
+- 不要替 `dsh-mcp-connector` 写它的表：那份存储有跨进程日志与锁，两边同时写会丢 token。要断开/解绑就让人去管理页。
+- 不要用 `while True` 轮询工具注册；`waitForTools` 有 `probeTimeoutMs` 上限。
