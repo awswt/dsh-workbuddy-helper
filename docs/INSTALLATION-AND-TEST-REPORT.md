@@ -1,10 +1,10 @@
-# dsh-onversation-help 改造、接入与测试报告
+# dsh-workbuddy-helper 改造、接入与测试报告
 
 - 日期：2026-11-22
-- 仓库：`git@github.com:awswt/dsh-onversation-help.git`
+- 仓库：`git@github.com:awswt/dsh-workbuddy-helper.git`
 - 分支：`main`
 - 代码提交：`bcafcfa`；本报告随后提交在 `main`
-- 宿主：DeepSeek Harness `0.2.2-rc.5`，测试 profile `onversation-gh`（headless 组合）
+- 宿主：DeepSeek Harness `0.2.2-rc.5`，测试 profile `workbuddy-helper-gh`（headless 组合）
 
 ---
 
@@ -12,14 +12,14 @@
 
 | 项 | 结果 |
 |---|---|
-| 插件改名 | 完成，统一为 `dsh-onversation-help`（按用户指定保留 `onversation` 拼写） |
+| 插件改名 | 完成，统一为 `dsh-workbuddy-helper`（按用户指定保留 `onversation` 拼写） |
 | WorkBuddy connector 接入 | 完成，只读复用 `dsh-connect-workbuddy` 账号库，提供 `connector` 状态与 `workbuddy-connector` 认证模式 |
 | 会话级专家/技能 | 完成，`agent.ctx` 子插件 + 两个技能 provider + sidecar |
 | 代码推送 | 完成，已推送到 `main`（代码提交 `bcafcfa`） |
-| GitHub 安装 | 完成，`onversation-gh` profile 从 `git+ssh://git@github.com/awswt/dsh-onversation-help.git` 安装成功 |
+| GitHub 安装 | 完成，`workbuddy-helper-gh` profile 从 `git+ssh://git@github.com/awswt/dsh-workbuddy-helper.git` 安装成功 |
 | 单元测试 | 8/8 通过 |
 | 宿主接线测试 | 通过（工具、命令、专家选择、技能、清理、fiber 销毁） |
-| 假模型端到端 | 通过（真实 DSH 宿主执行 `onversation_help`，专家提示段与技能目录注入生效） |
+| 假模型端到端 | 通过（真实 DSH 宿主执行 `workbuddy_helper`，专家提示段与技能目录注入生效） |
 | 真实模型端到端 | 未执行：headless profile 缺少 `DEEPSEEK_API_KEY`，不消耗用户真实额度 |
 
 ---
@@ -28,17 +28,17 @@
 
 | 位置 | 修改前 | 修改后 |
 |---|---|---|
-| npm 包名 | `dsh-expert-center` | `dsh-onversation-help` |
-| bundle 行 id | `expert-center` | `onversation-help` |
-| prompt 段 | `expert-center:expert` | `onversation-help:expert:<gen>` |
-| 技能范围段 | `expert-center:skill-scope` | `onversation-help:skill-scope:<gen>` |
-| 专家技能 provider | `expert-bundle` | `onversation-help-expert-<gen>` |
-| 全局技能过滤 provider | `expert-session-filter` | `onversation-help-filter-<gen>` |
-| 工具名 | 无 | `onversation_help` |
-| 命令名 | 无 | `/onversation-help` |
-| 错误码前缀 | `EXPERT_CENTER_` | `ONVERSATION_HELP_` |
-| 数据目录 | `$DSH_HOME/expert-center` | `$DSH_HOME/onversation-help` |
-| 设计文档 | `docs/dsh-expert-center-design.md` | `docs/dsh-onversation-help-design.md` |
+| npm 包名 | `dsh-expert-center` | `dsh-workbuddy-helper` |
+| bundle 行 id | `expert-center` | `workbuddy-helper` |
+| prompt 段 | `expert-center:expert` | `workbuddy-helper:expert:<gen>` |
+| 技能范围段 | `expert-center:skill-scope` | `workbuddy-helper:skill-scope:<gen>` |
+| 专家技能 provider | `expert-bundle` | `workbuddy-helper-expert-<gen>` |
+| 全局技能过滤 provider | `expert-session-filter` | `workbuddy-helper-filter-<gen>` |
+| 工具名 | 无 | `workbuddy_helper` |
+| 命令名 | 无 | `/workbuddy-helper` |
+| 错误码前缀 | `EXPERT_CENTER_` | `WORKBUDDY_HELPER_` |
+| 数据目录 | `$DSH_HOME/expert-center` | `$DSH_HOME/workbuddy-helper` |
+| 设计文档 | `docs/dsh-expert-center-design.md` | `docs/dsh-workbuddy-helper-design.md` |
 
 `<gen>` 是每次挂载递增的 generation，用于“先挂新、再销毁旧”，切换失败时保留旧人格。
 
@@ -115,7 +115,7 @@ credentialRef: WB_EXPERT_TOKEN
 
 | 文件 | 内容 |
 |---|---|
-| `lib/index.js` | `onversation_help` 工具、`/onversation-help` 命令、agent 生命周期、配置装配 |
+| `lib/index.js` | `workbuddy_helper` 工具、`/workbuddy-helper` 命令、agent 生命周期、配置装配 |
 | `lib/session.js` | 每会话状态、串行队列、挂载/销毁、失败回滚、sidecar |
 | `lib/session-plugin.js` | `agent.ctx` 内注册专家提示段与技能 provider |
 | `lib/skill-providers.js` | 专家技能 provider + 全局技能影子过滤器 |
@@ -133,11 +133,11 @@ credentialRef: WB_EXPERT_TOKEN
 
 1. 选择专家时，在 `agent.ctx` 下挂载子插件。
 2. 子插件注册：
-   - `onversation-help:expert:<gen>` 系统提示段；
-   - `onversation-help-expert-<gen>` 专家技能 provider（rank 200）；
-   - `onversation-help-filter-<gen>` 全局技能影子 provider（rank 1000，仅 `globalMode=selected` 时）。
+   - `workbuddy-helper:expert:<gen>` 系统提示段；
+   - `workbuddy-helper-expert-<gen>` 专家技能 provider（rank 200）；
+   - `workbuddy-helper-filter-<gen>` 全局技能影子 provider（rank 1000，仅 `globalMode=selected` 时）。
 3. 新 fiber 挂载成功后才销毁旧 fiber；挂载失败时旧人格保留。
-4. 状态写 `$DSH_HOME/onversation-help/sessions/<sha256(sessionId)>.json`；`agent/created` 重放，插件启动时 `ctx.agents.list()` 对账。
+4. 状态写 `$DSH_HOME/workbuddy-helper/sessions/<sha256(sessionId)>.json`；`agent/created` 重放，插件启动时 `ctx.agents.list()` 对账。
 5. 技能开关变化只改内存 state 并调用 provider 的 `invalidate()`；不重挂、不写全局技能文件。
 
 ### 4.3 专家包安全
@@ -160,35 +160,35 @@ credentialRef: WB_EXPERT_TOKEN
 ### 5.2 创建隔离测试 profile
 
 ```bash
-dsh --profile onversation-gh --from-default-profile headless --dump-config
+dsh --profile workbuddy-helper-gh --from-default-profile headless --dump-config
 ```
 
 ### 5.3 从 GitHub 安装
 
 ```bash
-dsh plugin --profile onversation-gh add \
-  git+ssh://git@github.com/awswt/dsh-onversation-help.git
+dsh plugin --profile workbuddy-helper-gh add \
+  git+ssh://git@github.com/awswt/dsh-workbuddy-helper.git
 ```
 
 HTTPS 等价写法：
 
 ```bash
-dsh plugin --profile onversation-gh add \
-  https://github.com/awswt/dsh-onversation-help.git
+dsh plugin --profile workbuddy-helper-gh add \
+  https://github.com/awswt/dsh-workbuddy-helper.git
 ```
 
 ### 5.4 验证安装
 
 ```bash
-dsh --profile onversation-gh --dump-config | grep -A 4 onversation-help
+dsh --profile workbuddy-helper-gh --dump-config | grep -A 4 workbuddy-helper
 ```
 
 期望：
 
 ```yaml
-# == dsh-onversation-help
-- id: onversation-help
-  name: dsh-onversation-help
+# == dsh-workbuddy-helper
+- id: workbuddy-helper
+  name: dsh-workbuddy-helper
   config:
     enabled: true
     authMode: none
@@ -198,8 +198,8 @@ dsh --profile onversation-gh --dump-config | grep -A 4 onversation-help
 
 ```yaml
 - insert:
-    - id: onversation-help
-      name: dsh-onversation-help
+    - id: workbuddy-helper
+      name: dsh-workbuddy-helper
       config:
         enabled: true
         authMode: none
@@ -269,8 +269,8 @@ test/host-integration.mjs
 ```json
 {
   "ok": true,
-  "tool": "onversation_help",
-  "command": "onversation-help",
+  "tool": "workbuddy_helper",
+  "command": "workbuddy-helper",
   "connector": { "installed": true, "accounts": 3, "usable": 3 },
   "selectedExpert": "ai-agent-engineer",
   "selectedSkills": ["agent-craft"],
@@ -283,10 +283,10 @@ test/host-integration.mjs
 
 ### 6.5 GitHub 安装验证
 
-- profile：`onversation-gh`
-- 依赖：`dsh-onversation-help: github:awswt/dsh-onversation-help`
+- profile：`workbuddy-helper-gh`
+- 依赖：`dsh-workbuddy-helper: github:awswt/dsh-workbuddy-helper`
 - `dsh --dump-config` 退出码 0
-- 组合中出现 bundle 行 `onversation-help`
+- 组合中出现 bundle 行 `workbuddy-helper`
 - 安装副本中 `lib/session.js` 已包含最新显示名修复
 
 ### 6.6 真实 DSH headless 启动
@@ -294,7 +294,7 @@ test/host-integration.mjs
 命令：
 
 ```bash
-dsh --profile onversation-gh "Use the onversation_help tool with action=connector."
+dsh --profile workbuddy-helper-gh "Use the workbuddy_helper tool with action=connector."
 ```
 
 结果：
@@ -310,7 +310,7 @@ stderr 中仅有 `preset-maoying` 等 6 条与插件无关的 pending 警告。
 本地 Messages 兼容 SSE 服务冒充模型返回：
 
 ```json
-{"name":"onversation_help","input":{"action":"connector"}}
+{"name":"workbuddy_helper","input":{"action":"connector"}}
 ```
 
 真实 DSH 执行工具后，第二次请求带回 `tool_result`，内容为：
@@ -341,7 +341,7 @@ stderr 中仅有 `preset-maoying` 等 6 条与插件无关的 pending 警告。
 本地假模型返回：
 
 ```json
-{"name":"onversation_help","input":{"action":"expert","expertId":"ai-agent-engineer"}}
+{"name":"workbuddy_helper","input":{"action":"expert","expertId":"ai-agent-engineer"}}
 ```
 
 真实 DSH 执行后，下一次模型请求：
@@ -390,19 +390,19 @@ stderr 中仅有 `preset-maoying` 等 6 条与插件无关的 pending 警告。
 
 ```bash
 # 1. 运行单元测试
-cd dsh-onversation-help
+cd dsh-workbuddy-helper
 npm install
 npm test
 
 # 2. 创建测试 profile
-dsh --profile onversation-gh --from-default-profile headless --dump-config
+dsh --profile workbuddy-helper-gh --from-default-profile headless --dump-config
 
 # 3. 从 GitHub 安装
-dsh plugin --profile onversation-gh add \
-  git+ssh://git@github.com/awswt/dsh-onversation-help.git
+dsh plugin --profile workbuddy-helper-gh add \
+  git+ssh://git@github.com/awswt/dsh-workbuddy-helper.git
 
 # 4. 验证组合
-dsh --profile onversation-gh --dump-config | grep -A 4 onversation-help
+dsh --profile workbuddy-helper-gh --dump-config | grep -A 4 workbuddy-helper
 
 # 5. 宿主接线测试
 NODE_PATH="<DSH app.asar>/dsh/node_modules" \
@@ -411,7 +411,7 @@ ELECTRON_RUN_AS_NODE=1 "<DeepSeek Harness.exe>" test/host-integration.mjs
 # 6. 假模型端到端
 DSH_APP_EXE="<DeepSeek Harness.exe>" \
 DSH_BIN="<DSH app.asar>/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js" \
-DSH_TEST_PROFILE=onversation-gh \
+DSH_TEST_PROFILE=workbuddy-helper-gh \
 node test/fake-model-expert-e2e.mjs
 ```
 
@@ -420,7 +420,7 @@ node test/fake-model-expert-e2e.mjs
 ## 9. 仓库信息
 
 ```text
-git@github.com:awswt/dsh-onversation-help.git
+git@github.com:awswt/dsh-workbuddy-helper.git
 main
 bcafcfa fix: fall back to manifest display name when bundle metadata is absent
 320715d docs: add installation and test report
@@ -431,5 +431,5 @@ be5b19b fix: resolve expert display name from bundle metadata
 ```
 
 工作区：`E:/DSH/workspace/migrate`
-测试 profile：`~/.dsh/profiles/onversation-gh`
-数据目录：`~/.dsh/onversation-help`
+测试 profile：`~/.dsh/profiles/workbuddy-helper-gh`
+数据目录：`~/.dsh/workbuddy-helper`

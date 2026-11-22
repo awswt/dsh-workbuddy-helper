@@ -4,7 +4,8 @@ node_modules/
 .env.*
 .DS_Store
 coverage/
-.onversation-help/
+.workbuddy-helper/
 
 .workbuddy/
 package-lock.json
+dist/

@@ -1,10 +1,10 @@
-# dsh-onversation-help bundle patch.
+# dsh-workbuddy-helper bundle patch.
 # `dsh plugin --profile <name> add <package>` appends this bundle to
 # dsh.profile.bundles and applies this layer, so the host half mounts without
 # editing the profile patch by hand.
 - insert:
-    - id: onversation-help
-      name: dsh-onversation-help
+    - id: workbuddy-helper
+      name: dsh-workbuddy-helper
       config:
         enabled: true
         authMode: none

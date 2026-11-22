@@ -13,7 +13,7 @@ import { safeJoin } from '../lib/util.js'
 
 const FAKE_TOKEN = 'test-token-1234567890'
 
-async function tempDir(prefix = 'onversation-help-') {
+async function tempDir(prefix = 'workbuddy-helper-') {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix))
 }
 
@@ -29,15 +29,15 @@ test('assertAllowedUrl enforces HTTPS and host allow-list', () => {
   assert.equal(assertAllowedUrl('https://example.com/a', { allowHosts: ['example.com'] }).hostname, 'example.com')
   assert.throws(
     () => assertAllowedUrl('http://example.com/a', { allowHosts: ['example.com'] }),
-    error => error instanceof AuthError && error.code === 'ONVERSATION_HELP_URL_INSECURE',
+    error => error instanceof AuthError && error.code === 'WORKBUDDY_HELPER_URL_INSECURE',
   )
   assert.throws(
     () => assertAllowedUrl('https://evil.example/a', { allowHosts: ['example.com'] }),
-    error => error instanceof AuthError && error.code === 'ONVERSATION_HELP_HOST_DENIED',
+    error => error instanceof AuthError && error.code === 'WORKBUDDY_HELPER_HOST_DENIED',
   )
   assert.throws(
     () => assertAllowedUrl('https://user:pass@example.com/a', { allowHosts: ['example.com'] }),
-    error => error instanceof AuthError && error.code === 'ONVERSATION_HELP_URL_USERINFO',
+    error => error instanceof AuthError && error.code === 'WORKBUDDY_HELPER_URL_USERINFO',
   )
 })
 
@@ -45,7 +45,7 @@ test('resolveAuth supports none, inline rejection and WorkBuddy connector', asyn
   assert.equal(await resolveAuth({ mode: 'none' }, {}), undefined)
   await assert.rejects(
     () => resolveAuth({ mode: 'bearer', token: FAKE_TOKEN }, {}),
-    error => error instanceof AuthError && error.code === 'ONVERSATION_HELP_AUTH_INLINE',
+    error => error instanceof AuthError && error.code === 'WORKBUDDY_HELPER_AUTH_INLINE',
   )
   const auth = await resolveAuth(
     { mode: 'workbuddy-connector' },
@@ -58,7 +58,7 @@ test('resolveAuth supports none, inline rejection and WorkBuddy connector', asyn
 test('resolveAuth reports a missing connector token without exposing a value', async () => {
   await assert.rejects(
     () => resolveAuth({ mode: 'workbuddy-connector' }, { connector: { resolveToken: async () => undefined } }),
-    error => error instanceof AuthError && error.code === 'ONVERSATION_HELP_CONNECTOR_NO_TOKEN',
+    error => error instanceof AuthError && error.code === 'WORKBUDDY_HELPER_CONNECTOR_NO_TOKEN',
   )
 })
 
@@ -153,6 +153,8 @@ test('BundleStore reads a local expert bundle and skips a path-escaping skill', 
   await fs.writeFile(path.join(expertRoot, '.codebuddy-plugin', 'plugin.json'), JSON.stringify({
     name: 'alpha',
     version: '1.2.3',
+    displayName: { zh: '阿尔法', en: 'Alpha' },
+    profession: { zh: '测试工程师', en: 'Test Engineer' },
     agents: ['./agents/alpha.md'],
     skills: ['./skills/alpha-skill', '../outside'],
   }))
@@ -174,6 +176,12 @@ test('BundleStore reads a local expert bundle and skips a path-escaping skill', 
     market: { bundleUrl: () => { throw new Error('should not download a local expert') } },
     maxPromptChars: 500,
   })
+  const locals = await store.listLocal()
+  assert.equal(locals.length, 1)
+  assert.equal(locals[0].id, 'alpha')
+  assert.equal(locals[0].displayName, '阿尔法')
+  assert.equal(locals[0].profession, '测试工程师')
+
   const pkg = await store.ensure({ id: 'alpha', plugin: 'alpha', promptFile: '/plugins/alpha/agents/alpha.md' })
   assert.equal(pkg.source, 'local')
   assert.equal(pkg.version, '1.2.3')
@@ -184,7 +192,7 @@ test('BundleStore reads a local expert bundle and skips a path-escaping skill', 
 })
 
 test('safeJoin rejects traversal and accepts descendants', () => {
-  const root = path.resolve(os.tmpdir(), 'onversation-root')
+  const root = path.resolve(os.tmpdir(), 'workbuddy-helper-root')
   assert.equal(safeJoin(root, 'a/b'), path.resolve(root, 'a/b'))
   assert.equal(safeJoin(root, '../outside'), undefined)
   assert.equal(safeJoin(root, '/absolute'), undefined)

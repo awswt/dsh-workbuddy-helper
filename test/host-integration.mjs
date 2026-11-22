@@ -124,7 +124,7 @@ apply(ctx, {
 
 assert.equal(typeof ctx.registeredTool?.execute, 'function', 'tool must be registered')
 assert.equal(commands.length, 1, 'command must be registered')
-assert.equal(commands[0].name, 'onversation-help')
+assert.equal(commands[0].name, 'workbuddy-helper')
 
 const connector = JSON.parse(await ctx.registeredTool.execute({ action: 'connector' }, { agent }))
 assert.equal(connector.connector, 'dsh-connect-workbuddy')
@@ -136,12 +136,22 @@ assert.equal(selected.applied, true)
 assert.equal(selected.expert.id, 'ai-agent-engineer')
 assert.equal(typeof selected.expert.displayName, 'string')
 assert.equal(selected.expert.displayName, '程枢')
-assert.equal(sections.some(section => section.name.startsWith('onversation-help:expert:')), true)
-assert.equal(providers.some(provider => provider.name.startsWith('onversation-help-expert-')), true)
+assert.equal(sections.some(section => section.name.startsWith('workbuddy-helper:expert:')), true)
+assert.equal(providers.some(provider => provider.name.startsWith('workbuddy-helper-expert-')), true)
 
 const skills = JSON.parse(await ctx.registeredTool.execute({ action: 'skills' }, { agent }))
 assert.equal(skills.global.length, 2)
 assert.equal(skills.expert.some(skill => skill.name === 'agent-craft'), true)
+
+const marketView = JSON.parse(await ctx.registeredTool.execute({ action: 'market', query: '逆向' }, { agent }))
+assert.equal(marketView.publicTotal, 429)
+assert.equal(marketView.items.some(item => item.id === 'rea-reverse-engineer' && item.source === 'local'), true)
+
+const reverse = JSON.parse(await ctx.registeredTool.execute({ action: 'expert', expertId: 'rea-reverse-engineer' }, { agent }))
+assert.equal(reverse.applied, true)
+assert.equal(reverse.expert.id, 'rea-reverse-engineer')
+assert.equal(reverse.expert.displayName, 'REA 逆向功能分析专家')
+assert.equal(reverse.skills.expertNames.includes('rea-analysis'), true)
 
 const cleared = JSON.parse(await ctx.registeredTool.execute({ action: 'off' }, { agent }))
 assert.equal(cleared.applied, false)
@@ -161,6 +171,12 @@ console.log(JSON.stringify({
   },
   selectedExpert: selected.expert.id,
   selectedSkills: skills.expert.map(skill => skill.name),
+  market: {
+    publicTotal: marketView.publicTotal,
+    localTotal: marketView.localTotal,
+    reverseFound: marketView.items.some(item => item.id === 'rea-reverse-engineer' && item.source === 'local'),
+  },
+  reverseExpert: reverse.expert.displayName,
   cleared: cleared.applied === false,
   fiberDisposed,
 }, null, 2))

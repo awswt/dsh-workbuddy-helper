@@ -1,4 +1,4 @@
-# DSH 专家中心插件（dsh-onversation-help）设计方案
+# DSH 专家中心插件（dsh-workbuddy-helper）设计方案
 
 - 版本：v1 草案
 - 日期：2026-11-22
@@ -81,7 +81,7 @@ flowchart TB
     UI3["激活态胶囊（专家名 + 技能数）"]
   end
 
-  subgraph Host["dsh-onversation-help Host Plugin"]
+  subgraph Host["dsh-workbuddy-helper Host Plugin"]
     GW["RemoteGateway<br/>Typert RPC"]
     SR["SessionRegistry<br/>apply / switch / clear"]
     SS["SessionStore<br/>sidecar 原子读写"]
@@ -140,7 +140,7 @@ flowchart TB
 ## 5. 目录结构
 
 ```text
-dsh-onversation-help/
+dsh-workbuddy-helper/
 ├─ package.json
 ├─ cordis.patch.yml
 ├─ lib/
@@ -152,7 +152,7 @@ dsh-onversation-help/
 │  ├─ session-store.js      # sidecar 原子读写、保留期清理
 │  ├─ session-registry.js   # 选择/切换/清除、串行化、回滚
 │  ├─ session-plugin.js     # agent 作用域子插件（提示段 + provider）
-│  ├─ skill-providers.js    # onversation-help-expert provider + global filter provider
+│  ├─ skill-providers.js    # workbuddy-helper-expert provider + global filter provider
 │  ├─ remote.js             # Typert 远程服务与 manifest
 │  ├─ telemetry.js          # traceId、指标、审计
 │  └─ errors.js             # 稳定错误码
@@ -162,7 +162,7 @@ dsh-onversation-help/
 │  ├─ chips.jsx             # 输入区激活态
 │  └─ styles.css
 ├─ skills/
-│  └─ dsh-onversation-help/
+│  └─ dsh-workbuddy-helper/
 │     └─ SKILL.md           # 可选：教模型如何配合专家/技能
 ├─ test/
 │  ├─ unit/                 # 纯函数与安全用例
@@ -178,7 +178,7 @@ dsh-onversation-help/
 
 职责：
 
-- 拉取 `expert_center.json`，校验 `version / experts / categories`，缓存到 `$DSH_HOME/onversation-help/cache/manifest.json`。
+- 拉取 `expert_center.json`，校验 `version / experts / categories`，缓存到 `$DSH_HOME/workbuddy-helper/cache/manifest.json`。
 - 记录 `etag / lastModified / fetchedAt / sourceUrl`；TTL 默认 6 小时；请求失败时允许使用 7 天内的 stale 缓存。
 - 列表查询在宿主侧过滤、分页，避免把 1.1MB 清单整体发给前端。
 - 合并来源：`market`、`local`、`hybrid`；同 `plugin` 名以版本高者为准，版本相同优先本地。
@@ -238,7 +238,7 @@ export function apply(ctx, config = {}) {
 
   if (expert && prompt) {
     ctx.systemPrompt.section({
-      name: 'onversation-help:expert',
+      name: 'workbuddy-helper:expert',
       order: 20,
       text: renderExpertBlock(expert, prompt),
       interpolate: false,
@@ -252,7 +252,7 @@ export function apply(ctx, config = {}) {
   if (state.skills.globalMode === 'selected') {
     refreshers.push(installGlobalSkillFilter(ctx, globalSkills, state))
     ctx.systemPrompt.section({
-      name: 'onversation-help:skill-scope',
+      name: 'workbuddy-helper:skill-scope',
       order: 21,
       text: 'Only the skills listed in the current skill catalog are enabled for this session. Do not use skills that are absent from it.',
       interpolate: false,
@@ -293,8 +293,8 @@ export const SessionExpertPlugin = plugin
 
 | 层 | provider | rank | 作用 |
 |---|---|---|---|
-| agent | `onversation-help-expert` | 200 | 专家自带技能；按 `state.skills.expertNames` 决定 invocation |
-| agent | `onversation-help-filter` | 1000 | 枚举全局技能并逐个“影子化”；未选中的设为 `modelInvocable=false, userInvocable=false` |
+| agent | `workbuddy-helper-expert` | 200 | 专家自带技能；按 `state.skills.expertNames` 决定 invocation |
+| agent | `workbuddy-helper-filter` | 1000 | 枚举全局技能并逐个“影子化”；未选中的设为 `modelInvocable=false, userInvocable=false` |
 | global | `filesystem` | 100-600 | 用户/项目技能原样保留，不修改磁盘 |
 
 效果：
@@ -304,7 +304,7 @@ export const SessionExpertPlugin = plugin
 - 专家自带技能：rank 200 低于影子 provider 的 1000，同名时专家技能胜出；未选中的专家技能同样以 false/false 隐藏。
 - 不需要 shadow `skill` 工具，不需要 `ctx.tools.restrict`，原生技能目录、`skill` 工具、`/name` 手势全部继续工作。
 
-选择专家时，`state.skills.expertNames` 默认初始化为该专家 `plugin.json` 中声明的全部技能名；用户取消勾选后再从集合移除。专家没有技能时不注册 `onversation-help-expert` provider。
+选择专家时，`state.skills.expertNames` 默认初始化为该专家 `plugin.json` 中声明的全部技能名；用户取消勾选后再从集合移除。专家没有技能时不注册 `workbuddy-helper-expert` provider。
 
 同名冲突规则：专家包与全局技能同名时，专家包拥有该名字；即使用户取消勾选该专家技能，也会连同全局同名技能一起隐藏。UI 在专家详情里标出冲突并提示“该名字由专家包接管”。这样避免同一名字在两个 provider 之间来回切换，行为可预测。
 
@@ -354,7 +354,7 @@ async get(candidate, options) {
 
 ### 6.6 SessionStore
 
-路径：`$DSH_HOME/onversation-help/sessions/<sha256(sessionId)>.json`，文件权限 0600，原子写（临时文件 + rename）。
+路径：`$DSH_HOME/workbuddy-helper/sessions/<sha256(sessionId)>.json`，文件权限 0600，原子写（临时文件 + rename）。
 
 示例（`sessionId`、路径、哈希值做了省略，仅示意结构）：
 
@@ -368,7 +368,7 @@ async get(candidate, options) {
     "plugin": "ai-agent-engineer",
     "version": "1.0.0",
     "displayName": "程枢",
-    "root": "C:/Users/.../onversation-help/cache/bundles/<hash>",
+    "root": "C:/Users/.../workbuddy-helper/cache/bundles/<hash>",
     "promptSha256": "…",
     "promptChars": 18234,
     "source": "local"
@@ -423,8 +423,8 @@ Agent Preset 是创建期组合：定义在 `cordis.patch.yml` 里，会话创�
 | 资源 | 隔离方式 | 是否影响其他会话 |
 |---|---|---|
 | 专家提示词 | `agent.ctx.systemPrompt.section`，fiber 销毁即移除 | 否 |
-| 专家技能 | agent 层 `onversation-help-expert` provider | 否 |
-| 全局技能开关 | agent 层 `onversation-help-filter` 影子 provider | 否 |
+| 专家技能 | agent 层 `workbuddy-helper-expert` provider | 否 |
+| 全局技能开关 | agent 层 `workbuddy-helper-filter` 影子 provider | 否 |
 | UI 激活态 | 按 sessionId 查询 sidecar | 否 |
 | 凭据 | 全局凭据服务，所有会话共享同一市场身份 | 是（身份是账号级，不是会话级） |
 | 市场缓存 | 全局磁盘缓存，只读共享 | 是（只影响性能，不影响语义） |
@@ -616,8 +616,8 @@ sequenceDiagram
 
 ```yaml
 - insert:
-    - id: onversation-help
-      name: dsh-onversation-help
+    - id: workbuddy-helper
+      name: dsh-workbuddy-helper
       config:
         enabled: true
         source: hybrid
@@ -770,7 +770,7 @@ sequenceDiagram
 - `/expert`：查看当前；`/expert off` 清除；`/expert <id>` 选择。
 - `/skill`：查看；`/skill all` 全开；`/skill only a b c` 只开这些；`/skill +a -b` 增量。
 - 命令 handler 直接对 receiving agent 操作，不产生模型消息；返回 `{kind:'success'|'error', text}`。
-- 如果命令名已被其他插件占用，注册时捕获异常并降级为 `/onversation-help`，UI 仍可用。
+- 如果命令名已被其他插件占用，注册时捕获异常并降级为 `/workbuddy-helper`，UI 仍可用。
 
 `[待核实: DSH 当前内置命令是否已占用 /expert 或 /skill；核实方式：启动后执行 /help 或读 commands 注册表]`
 
@@ -796,17 +796,17 @@ sequenceDiagram
 | 技能不存在 | 目录对比 | 否 | “部分技能已失效” | 其余继续 |
 | 凭据解密失败 | `$wbEncrypted` | 否 | “请粘贴 token” | 不降级 |
 
-错误码统一前缀 `ONVERSATION_HELP_`，例如：
+错误码统一前缀 `WORKBUDDY_HELPER_`，例如：
 
 ```text
-ONVERSATION_HELP_MARKET_UNREACHABLE
-ONVERSATION_HELP_MARKET_AUTH_REQUIRED
-ONVERSATION_HELP_MARKET_SCHEMA_INVALID
-ONVERSATION_HELP_BUNDLE_REJECTED
-ONVERSATION_HELP_PROMPT_TRUNCATED
-ONVERSATION_HELP_SESSION_NOT_LIVE
-ONVERSATION_HELP_REVISION_CONFLICT
-ONVERSATION_HELP_APPLY_ROLLED_BACK
+WORKBUDDY_HELPER_MARKET_UNREACHABLE
+WORKBUDDY_HELPER_MARKET_AUTH_REQUIRED
+WORKBUDDY_HELPER_MARKET_SCHEMA_INVALID
+WORKBUDDY_HELPER_BUNDLE_REJECTED
+WORKBUDDY_HELPER_PROMPT_TRUNCATED
+WORKBUDDY_HELPER_SESSION_NOT_LIVE
+WORKBUDDY_HELPER_REVISION_CONFLICT
+WORKBUDDY_HELPER_APPLY_ROLLED_BACK
 ```
 
 ---
@@ -841,7 +841,7 @@ select_expert
 | `expert_center_skill_count` | gauge | 会话启用技能数 |
 | `expert_center_auth_failures_total` | counter | 按状态码 |
 
-若宿主没有通用 metrics 服务，降级为结构化日志 + 进程内计数，通过 `/onversation-help stats` 命令输出。`[待核实: DSH 0.2.x 插件可用的 telemetry/metrics 服务名与接口]`
+若宿主没有通用 metrics 服务，降级为结构化日志 + 进程内计数，通过 `/workbuddy-helper stats` 命令输出。`[待核实: DSH 0.2.x 插件可用的 telemetry/metrics 服务名与接口]`
 
 ### 12.3 审计
 
@@ -912,7 +912,7 @@ select_expert
 
 ### 14.1 交付物
 
-- npm 包 `dsh-onversation-help`（ESM，预构建产物）。
+- npm 包 `dsh-workbuddy-helper`（ESM，预构建产物）。
 - `cordis.patch.yml` bundle patch，`dsh plugin add` 自动并入。
 - README：安装、配置、身份注入、故障排查。
 - 评测脚本与基线结果表。
@@ -922,15 +922,15 @@ select_expert
 
 ```bash
 # 先装到隔离 profile 验证，不动 desktop
-dsh plugin --profile expertcenter-test add ./dsh-onversation-help
+dsh plugin --profile expertcenter-test add ./dsh-workbuddy-helper
 # 或 npm 包
-dsh plugin --profile expertcenter-test add dsh-onversation-help
+dsh plugin --profile expertcenter-test add dsh-workbuddy-helper
 ```
 
 验证通过后再装到 desktop：
 
 ```bash
-dsh plugin --profile desktop add dsh-onversation-help
+dsh plugin --profile desktop add dsh-workbuddy-helper
 ```
 
 ### 14.3 灰度
@@ -943,9 +943,9 @@ dsh plugin --profile desktop add dsh-onversation-help
 ### 14.4 回滚
 
 - 关闭：配置 `enabled: false`，命令/UI 消失，已激活会话的 fiber 在下次会话创建时不再挂载；当前会话保留下一步的提示段直到销毁（可接受）或提供 `/expert off` 强制清除。
-- 卸载：`dsh plugin --profile desktop remove dsh-onversation-help`；agent 作用域 fiber 随插件卸载回滚；sidecar 与缓存保留，重装可恢复。
+- 卸载：`dsh plugin --profile desktop remove dsh-workbuddy-helper`；agent 作用域 fiber 随插件卸载回滚；sidecar 与缓存保留，重装可恢复。
 - 版本回滚：pin 上一版本；sidecar `schemaVersion` 向后兼容，不升级旧文件。
-- 数据清理：`/onversation-help purge-cache` 清缓存；sidecar 按保留期自动清理。
+- 数据清理：`/workbuddy-helper purge-cache` 清缓存；sidecar 按保留期自动清理。
 
 关键优势：因为从不写全局 `cordis.patch.yml`、从不改技能文件，卸载不需要“恢复现场”。
 
@@ -1069,10 +1069,10 @@ lib/
 ├─ auth.js               # 凭据解析、host 允许列表、脱敏
 └─ util.js
 test/core.test.mjs
-docs/dsh-onversation-help-design.md
+docs/dsh-workbuddy-helper-design.md
 ```
 
-v0 已实现：`onversation_help` 工具、`/onversation-help` 命令、市场清单、专家包下载/本地专家、会话级提示段与技能过滤、WorkBuddy connector 状态读取、sidecar 持久化、失败回滚。
+v0 已实现：`workbuddy_helper` 工具、`/workbuddy-helper` 命令、市场清单、专家包下载/本地专家、会话级提示段与技能过滤、WorkBuddy connector 状态读取、sidecar 持久化、失败回滚。
 
 v0 未实现：Web 输入区 UI、Typert 远程服务、专家市场分页 UI、图片头像展示。它们不影响命令/工具路径，后续按设计文档第 10 节补齐。
 

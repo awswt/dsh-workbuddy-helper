@@ -1,5 +1,5 @@
 {
-  "name": "dsh-onversation-help",
+  "name": "dsh-workbuddy-helper",
   "version": "0.1.0",
   "description": "Session-scoped experts, skills and WorkBuddy connector status for DeepSeek Harness.",
   "type": "module",
@@ -41,5 +41,21 @@
     "skills",
     "workbuddy"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/awswt/dsh-workbuddy-helper.git"
+  },
+  "homepage": "https://github.com/awswt/dsh-workbuddy-helper",
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "docs/INSTALLATION-AND-TEST-REPORT.md",
+    "docs/dsh-workbuddy-helper-design.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

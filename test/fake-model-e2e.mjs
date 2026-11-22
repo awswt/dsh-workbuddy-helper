@@ -24,7 +24,7 @@ const server = http.createServer((req, res) => {
     try { parsed = JSON.parse(body) } catch {}
     const messagesText = JSON.stringify(parsed.messages ?? [])
     const hasToolResult = messagesText.includes('tool_result')
-    const isMainPrompt = messagesText.includes('Call the onversation_help tool')
+    const isMainPrompt = messagesText.includes('Call the workbuddy_helper tool')
     requests.push({ url: req.url, hasToolResult, isMainPrompt, bytes: body.length })
     if (hasToolResult) {
       const match = /"type":"tool_result"[\s\S]{0,4000}/.exec(messagesText)
@@ -48,7 +48,7 @@ const server = http.createServer((req, res) => {
         ['content_block_start', {
           type: 'content_block_start',
           index: 0,
-          content_block: { type: 'tool_use', id: 'toolu_probe_1', name: 'onversation_help', input: {} },
+          content_block: { type: 'tool_use', id: 'toolu_probe_1', name: 'workbuddy_helper', input: {} },
         }],
         ['content_block_delta', {
           type: 'content_block_delta',
@@ -126,7 +126,7 @@ await new Promise(resolve => server.listen(9877, '127.0.0.1', resolve))
 
 const exe = process.env.DSH_APP_EXE ?? 'D:/Program Files/deepseek harness/DeepSeek Harness.exe'
 const bin = process.env.DSH_BIN ?? 'D:/Program Files/deepseek harness/resources/app.asar/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'
-const child = spawn(exe, [bin, '--profile', process.env.DSH_TEST_PROFILE ?? 'onversation-gh', 'Call the onversation_help tool with action=connector.'], {
+const child = spawn(exe, [bin, '--profile', process.env.DSH_TEST_PROFILE ?? 'workbuddy-helper-gh', 'Call the workbuddy_helper tool with action=connector.'], {
   env: {
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',

@@ -75,7 +75,7 @@ const server = http.createServer((req, res) => {
       ['content_block_start', {
         type: 'content_block_start',
         index: 0,
-        content_block: { type: 'tool_use', id: 'toolu_expert_1', name: 'onversation_help', input: {} },
+        content_block: { type: 'tool_use', id: 'toolu_expert_1', name: 'workbuddy_helper', input: {} },
       }],
       ['content_block_delta', {
         type: 'content_block_delta',
@@ -96,7 +96,7 @@ await new Promise(resolve => server.listen(9878, '127.0.0.1', resolve))
 
 const exe = process.env.DSH_APP_EXE ?? 'D:/Program Files/deepseek harness/DeepSeek Harness.exe'
 const bin = process.env.DSH_BIN ?? 'D:/Program Files/deepseek harness/resources/app.asar/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'
-const child = spawn(exe, [bin, '--profile', process.env.DSH_TEST_PROFILE ?? 'onversation-gh', 'Select the ai-agent-engineer expert.'], {
+const child = spawn(exe, [bin, '--profile', process.env.DSH_TEST_PROFILE ?? 'workbuddy-helper-gh', 'Select the ai-agent-engineer expert.'], {
   env: {
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',
