@@ -36,6 +36,7 @@ test('web routes are replaced, not leaked, when the plugin reloads', () => {
   const routes = new Map()
   const scopedEffects = []
   const rootEffects = []
+  const warnings = []
   const webServer = {
     register(route) {
       if (routes.has(route.path)) throw new Error(`duplicate route ${route.path}`)
@@ -57,7 +58,7 @@ test('web routes are replaced, not leaked, when the plugin reloads', () => {
       const dispose = fn()
       if (typeof dispose === 'function') rootEffects.push(dispose)
     },
-    logger: { info() {}, warn() {} },
+    logger: { info() {}, warn(...args) { warnings.push(args.join(' ')) } },
   }
 
   registerWebUi(ctx, deps())
@@ -65,9 +66,12 @@ test('web routes are replaced, not leaked, when the plugin reloads', () => {
   assert.ok(first.includes('/dsh-workbuddy-helper/state'))
   assert.ok(first.includes('/dsh-workbuddy-helper/skill-market'))
 
-  // A reload re-runs the inject callback on the shared webServer.
+  // A reload re-runs the inject callback on the shared webServer. This fake has
+  // no `exact` table, so eviction has to come from the previous call's disposers.
   registerWebUi(ctx, deps())
   assert.deepEqual([...routes.keys()], first, 'second registration must not leave stale handlers')
+  assert.deepEqual(warnings.filter(line => line.includes('duplicate')), [],
+    'a reload must release its own routes instead of colliding with them')
 
   for (const dispose of rootEffects) dispose()
   assert.equal(routes.size, 0, 'plugin unload must release every registered route')
