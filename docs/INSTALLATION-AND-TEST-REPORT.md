@@ -295,7 +295,7 @@ AFTER_TOOL_HAS_OBJECT_NAMESTRING false
 ```bash
 npm pack
 dsh --profile <profile> --from-default-profile headless --dump-config
-dsh plugin --profile <profile> add /absolute/path/to/dsh-workbuddy-helper-0.1.0.tgz
+dsh plugin --profile <profile> add /absolute/path/to/dsh-workbuddy-helper-0.2.7.tgz
 ```
 
 结果：安装成功，`--dump-config` 退出码 0，组合中出现：
@@ -405,13 +405,13 @@ ERRORS none
 
 ```bash
 npm pack
-dsh plugin --profile <profile> add /absolute/path/to/dsh-workbuddy-helper-0.1.0.tgz
+dsh plugin --profile <profile> add /absolute/path/to/dsh-workbuddy-helper-0.2.7.tgz
 ```
 
 或放到 HTTPS 静态地址：
 
 ```bash
-dsh plugin --profile <profile> add https://your-cdn.example.com/dsh-workbuddy-helper-0.1.0.tgz
+dsh plugin --profile <profile> add https://your-cdn.example.com/dsh-workbuddy-helper-0.2.7.tgz
 ```
 
 ### 6.2 npm 标准方式（发布后可用）
@@ -477,6 +477,6 @@ main
 54abc51 feat: read the live WorkBuddy expert market with snapshot fallback
 ```
 
-安装包：`dist/dsh-workbuddy-helper-0.1.0.tgz`（本地产物，54 KB，未提交）。
+安装包：`dist/dsh-workbuddy-helper-0.2.7.tgz`（本地产物，54 KB，未提交）。
 
 在线市场代码提交为 `54abc51`，输入区面板提交为 `2c84660`；本报告的后续文档提交在其之后。
