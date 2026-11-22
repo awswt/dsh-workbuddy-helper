@@ -172,9 +172,11 @@ function run(command, args, options = {}) {
       stderr += text
       if (options.verbose === true) process.stderr.write(text)
     })
+    let timedOut = false
     const timer = options.timeoutMs === undefined
       ? null
       : setTimeout(() => {
+        timedOut = true
         try {
           child.kill()
         } catch {
@@ -187,7 +189,7 @@ function run(command, args, options = {}) {
     })
     child.on('close', (code) => {
       if (timer !== null) clearTimeout(timer)
-      resolve({ code, stdout, stderr, command: `${command} ${args.join(' ')}` })
+      resolve({ code, stdout, stderr, timedOut, command: `${command} ${args.join(' ')}` })
     })
   })
 }
@@ -419,19 +421,64 @@ async function startFakeModel({ port, plan, outDir, finalText }) {
 
 /* ──────────────────────────────── main flow ─────────────────────────────── */
 
+/**
+ * pnpm refuses to run a git-hosted package's `prepare` script unless the exact
+ * depPath is allowlisted in the profile's pnpm-workspace.yaml. DSH reports that as
+ * a plain nonzero exit with the hint on stderr, and a plain re-run usually gets
+ * through (the allowlist is cached in the store after the first fetch). Retrying
+ * once here is better than telling the operator to "just run it again" — but the
+ * retry must be announced, and the second attempt's real stderr is what gets
+ * reported so a genuine failure stays diagnosable.
+ */
+function isBuildGate(stderr) {
+  // Two shapes, both real: DSH's own hint ("add the exact key … under allowBuilds")
+  // and pnpm's ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED.
+  const text = String(stderr)
+  // `allowBuilds` alone is specific enough: it is a pnpm-only config key, and the
+  // generic "pnpm failed in profile directory" line never mentions it.
+  return /GIT_DEP_PREPARE_NOT_ALLOWED/.test(text)
+    || /allowBuilds/.test(text)
+    || /needs to execute build scripts/i.test(text)
+}
+
+/**
+ * The last meaningful line of pnpm output. Reporting `stderr.slice(-400)` looked
+ * like a diagnosis but produced things like "bhelper-e2e" (the tail of a path),
+ * which tells nobody anything.
+ */
+function explainFailure(stderr) {
+  const lines = String(stderr)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+  const errors = lines.filter((line) => /^ERR_|^pnpm:|^dsh:|Error:/.test(line))
+  const picked = errors.length > 0 ? errors.slice(-3) : lines.slice(-6)
+  return picked.length > 0 ? picked.join(' | ').slice(0, 600) : '(no output)'
+}
+
 async function installPlugin({ cli, profile, source, dshHome, verbose }) {
   const spec = source === 'github'
     ? 'git+https://github.com/awswt/dsh-workbuddy-helper.git'
     : source === 'local'
       ? `file:${REPO}`
       : source
+  const env = { ...process.env, DSH_HOME: dshHome }
+  const args = [cli, 'plugin', '--profile', profile, 'add', spec]
+  const onDisk = () => readJsonFile(path.join(dshHome, 'profiles', profile, 'node_modules', 'dsh-workbuddy-helper', 'package.json'))
+
   log(`installing ${spec} into profile ${profile}`)
-  const installed = await run(process.execPath, [cli, 'plugin', '--profile', profile, 'add', spec], {
-    env: { ...process.env, DSH_HOME: dshHome },
-    verbose,
-    timeoutMs: 300000,
-  })
-  return { ...installed, spec }
+  const attempts = []
+  let installed = await run(process.execPath, args, { env, verbose, timeoutMs: 300000 })
+  attempts.push({ attempt: 1, code: installed.code, timedOut: installed.timedOut })
+
+  // A build gate is retryable; anything else is reported as-is.
+  if (installed.code !== 0 && isBuildGate(installed.stderr) && onDisk() === null) {
+    log('pnpm blocked the git package build script; retrying once (known pnpm behaviour)')
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+    installed = await run(process.execPath, args, { env, verbose, timeoutMs: 300000 })
+    attempts.push({ attempt: 2, code: installed.code, timedOut: installed.timedOut })
+  }
+  return { ...installed, spec, attempts }
 }
 
 /**
@@ -577,10 +624,17 @@ async function main() {
         path.join(profileDir, 'node_modules', 'dsh-workbuddy-helper', 'package.json'),
       )
       if (installedPkg === null) {
-        const why = /ERR_PNPM_GIT_RESOLVE_FAILED|Could not connect to|ETIMEDOUT|ECONNRESET/.test(installed.stderr)
-          ? 'the network could not reach GitHub; retry, or run with --source local'
-          : installed.stderr.slice(-400)
-        checks.fail('plugin installs', `nothing at ${profileDir}/node_modules/dsh-workbuddy-helper (exit ${installed.code}): ${why}`)
+        const why = installed.timedOut === true
+          ? 'the install timed out after 300s; check the network, or run with --source local'
+          : /ERR_PNPM_GIT_RESOLVE_FAILED|Could not connect to|ETIMEDOUT|ECONNRESET/.test(installed.stderr)
+            ? 'the network could not reach GitHub; retry, or run with --source local'
+            : isBuildGate(installed.stderr)
+              ? 'pnpm still refused to run the git package build script after a retry — add the depPath it printed under allowBuilds in the profile pnpm-workspace.yaml'
+              : explainFailure(installed.stderr)
+        checks.fail(
+          'plugin installs',
+          `nothing at ${profileDir}/node_modules/dsh-workbuddy-helper (exit ${installed.code}, attempts ${installed.attempts.map((a) => a.code).join('/')}): ${why}`,
+        )
         report.failed = true
         return
       }
@@ -748,4 +802,9 @@ async function main() {
   }
 }
 
-await main()
+// Importable for tests: only run the flow when executed directly.
+const invokedDirectly = process.argv[1] !== undefined
+  && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
+if (invokedDirectly) await main()
+
+export { isBuildGate, explainFailure }
