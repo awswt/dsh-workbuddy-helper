@@ -197,7 +197,7 @@ categories      -> categories / categoryId
 npm test
 ```
 
-结果：**22/22 通过**。新增覆盖：
+结果：**26/26 通过**。新增覆盖：
 
 - 在线市场字段映射；
 - `PortalMarket` 的 URL、Bearer 头、请求体、`get-by-ids`、分类；
@@ -349,7 +349,45 @@ tool_result:
 
 未执行：headless profile 没有 `DEEPSEEK_API_KEY`。工具管线、提示段、技能目录用本地 Messages 兼容假模型验证，不消耗真实额度。
 
-### 5.9 第二轮：连接器页签、技能搜索与深色模式修复（v0.3.8）
+### 5.10 第三轮：会话辅助更名与 WorkBuddy 市场（v0.4.5）
+
+按用户反馈修复四项：
+
+1. **版本显示**：插件卡显示的是「已安装版本」，git 安装的更新按钮目标显示 commit 是宿主侧行为；本仓库已发布 `v0.4.x` git tag 与 CHANGELOG.md，更新后会显示语义化版本（实测：更新到 0.4.5 后卡片显示 v0.4.5）。
+2. **连接器搜索失效**：搜索框只接了目录查询，本机连接器列表没过滤；现在本机列表也按同一关键词过滤（客户端侧），目录走 WorkBuddy 市场搜索。
+3. **技能搜索逻辑**：技能页改为「本机技能优先、技能市场其次」，专家自带技能仅在无搜索词时展示、不参与搜索。
+4. **按钮更名与市场数据**：胶囊按钮/面板标题改为「会话辅助」；连接器市场改从 WorkBuddy 开放平台拉取。
+
+接口（均带 WorkBuddy 连接器账号池的 Bearer）：
+
+```text
+POST https://www.workbuddy.cn/portal/operation-platform/market/skill/list
+     {page, page_size, keyword?} → data.skills[] / total_count
+POST https://www.workbuddy.cn/api/v2/open-platform/buddy/connector/list
+     {platform: 'desktop', page, page_size} → data.list[] / has_more
+POST https://www.workbuddy.cn/api/v2/open-platform/buddy/connector/search
+     {platform, keyword, page, page_size}
+```
+
+过程中修掉的真实问题：
+
+1. `resolveAuth` 会把请求基址改写成账号令牌的域（www.codebuddy.cn），触发 URL 允许列表拒绝（`host is not allowed: www.codebuddy.cn`）；市场端点统一落在 www.workbuddy.cn，移除域覆盖。
+2. 客户端 `ROUTES.skillMarket` 常量漏加，面板内技能市场始终 404（API 直连正常）。
+
+Playwright 验证（0.4.5，Web profile + dsh-windows-mcp）：
+
+```text
+PILL_TEXT 会话辅助 REA 逆向功能分析专家
+TABS 专家1 | 技能4 | 连接器
+连接器市场头：WorkBuddy 连接器市场 · 第 1 页（首条 通达信）
+PLUGIN_FILTERED 1（搜 win）
+CATALOG_ROWS 4（搜 github，首条 GitHub）
+SKILL_SECTIONS 本机技能 | 技能市场
+MARKET_ROWS 12（搜 浏览器，首条 Web Access（浏览器自动化）v2.5.4）
+ERRORS none
+```
+
+
 
 在 5.8 的基础上按用户新需求完成三项：
 
@@ -494,6 +532,7 @@ lib/session.js         # slug 优先本地、ex_ 走市场
 test/core.test.mjs     # 13 项核心单测
 test/webui.test.mjs    # 5 项面板路由单测
 test/connectors.test.mjs # 4 项连接器单测（扫描/映射/门控/品牌色）
+test/portal-market.test.mjs # 4 项市场接口单测（skill/list、connector list/search、面板路由）
 test/host-integration.mjs
 cordis.patch.yml       # marketMode/authMode/portalBaseUrl 默认值
 ```

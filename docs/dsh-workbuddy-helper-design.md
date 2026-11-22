@@ -675,6 +675,14 @@ POST /dsh-workbuddy-helper/off      {sessionId}
 - 主题：主按钮用 `label-primary`/`bg-layer-2` 反色，规避品牌令牌在深浅主题间翻转。
 
 
+### 8.10 会话辅助与 WorkBuddy 市场
+
+- 按钮更名：胶囊与面板标题为「会话辅助」；专家 / 技能 / 连接器三页签独立，技能页不再依赖专家（专家自带技能只在无搜索词时展示）。
+- 技能市场：`POST /portal/operation-platform/market/skill/list`（keyword/page），数据归一为 `{id,name,description,icon,version,lifecycle}`。
+- 连接器市场：`POST /api/v2/open-platform/buddy/connector/list|search`（platform=desktop），归一为目录行结构；未登录或接口不可达时回退本地快照并在页头标注数据源。
+- 鉴权细节：账号令牌可能带 `www.codebuddy.cn` 域，市场请求一律落 www.workbuddy.cn（resolveAuth 不再用令牌域覆盖基址）。
+
+
 ## 9. 配置项
 
 ```yaml
@@ -1145,4 +1153,4 @@ v0 已实现：`workbuddy_helper` 工具、`/workbuddy-helper` 命令、在线�
 
 v0 未实现：Web 输入区 UI、Typert 远程服务、专家市场分页 UI、图片头像展示。它们不影响命令/工具路径，后续按设计文档第 10 节补齐。
 
-验证状态：`npm test` 22/22 通过；在线市场 `total_count=10000`、16 个分类；`ex_QvM298ih8T8g`（REA 逆向功能分析专家 / 软件逆向分析工程师）详情与 ZIP 包解析通过；快照 429 条仍可兜底；输入区 Web UI 已在 Web profile 用 Playwright 验证（三页签、技能搜索、专家切换、技能保存、连接器开关与目录搜索、胶囊状态、深色主按钮对比度）。未跑真实模型调用，安装后需按 15.2 第 1 步做 spike。
+验证状态：`npm test` 26/26 通过；在线市场 `total_count=10000`、16 个分类；`ex_QvM298ih8T8g`（REA 逆向功能分析专家 / 软件逆向分析工程师）详情与 ZIP 包解析通过；快照 429 条仍可兜底；输入区 Web UI 已在 Web profile 用 Playwright 验证（三页签、技能搜索、专家切换、技能保存、连接器开关与目录搜索、胶囊状态、深色主按钮对比度）。未跑真实模型调用，安装后需按 15.2 第 1 步做 spike。
