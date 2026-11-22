@@ -99,8 +99,9 @@ scripts/release.mjs  版本 bump → 测试 → commit → push 一条龙。
 ## 5. 验证
 
 ```powershell
-node --test test/*.test.mjs          # 121 条，必须全绿
+node --test test/*.test.mjs          # 127 条，必须全绿
 node --check lib/<file>.js           # 改完随手检
+node scripts/normalize-eol.mjs       # 体检工作区换行；--write 才落盘
 ```
 
 端到端（假模型 + 真 headless 会话，一条命令）：
@@ -132,6 +133,8 @@ node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin
 
 每完成一处改动：`node scripts/release.mjs`（= bump patch 版 + 跑测试 + commit + push）。要 minor/major 用 `--minor` / `--major`；只想看会做什么用 `--dry-run`。
 
+- 它现在**真的以退出码 0 结束**。历史上不是：git 把 `LF/CRLF` 提示写到 stderr，脚本 `stdio: 'inherit'` 透传，PowerShell 记成 `NativeCommandError`，于是连续三次"发布成功但报 exit 1"。修法是 ①`run()` 用 `spawnSync` 捕获两路再经 `forward()` 只写 stdout（`execFileSync` 成功时会丢掉子进程的 stderr，所以换掉了）；②仓库加 `.gitattributes`（`* text=auto eol=lf`）；③`scripts/normalize-eol.mjs` 把工作区里仍是 CRLF 的文本文件就地转 LF（默认 dry-run，`--write` 才落盘）。**`.gitattributes` 只约束转换方向，不改工作区字节**——只要盘上还是 CRLF，git 每次碰它都会警告，三件事缺一不可。
+- 判断发布成功看 `released vX.Y.Z` 与 `git rev-list --left-right --count origin/main...HEAD` = `0 0`，别只信退出码（反过来也成立：退出码 0 不代表推上去了，看 git）。
 - 版本号是唯一可信的"这份代码是新的"标志，但它**不等于内容**：同版本号的 tgz 与 git 提交可能不同（历史上 0.5.0 就出现过 14165B vs 13793B），所以验证装进去的东西要 grep 特征串，别只看 version。
 - `.gitignore` 必须挡住 `app-64.7z`（441MB 安装器）、`.workbuddy/`（逆向与探针产物）、`.dsh/`（装进来的技能）。
 
