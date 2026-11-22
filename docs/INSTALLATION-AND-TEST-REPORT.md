@@ -197,7 +197,7 @@ categories      -> categories / categoryId
 npm test
 ```
 
-结果：**13/13 通过**。新增覆盖：
+结果：**18/18 通过**。新增覆盖：
 
 - 在线市场字段映射；
 - `PortalMarket` 的 URL、Bearer 头、请求体、`get-by-ids`、分类；
@@ -349,6 +349,54 @@ tool_result:
 
 未执行：headless profile 没有 `DEEPSEEK_API_KEY`。工具管线、提示段、技能目录用本地 Messages 兼容假模型验证，不消耗真实额度。
 
+### 5.8 输入区 Web UI（Playwright + Edge）
+
+插件现在带客户端半区：`conversation.input.left` 槽位一个「专家」按钮，点击打开同源面板。
+宿主半区注册 5 条 JSON 路由：
+
+| 路由 | 方法 | 作用 |
+|---|---|---|
+| `/dsh-workbuddy-helper/state` | GET | 当前专家、技能、分类、市场规模、connector |
+| `/dsh-workbuddy-helper/experts` | GET | 在线市场 + 本地专家，支持 `query/categoryId/page` |
+| `/dsh-workbuddy-helper/select` | POST | 切换专家 |
+| `/dsh-workbuddy-helper/skills` | POST | 保存技能开关 |
+| `/dsh-workbuddy-helper/off` | POST | 移除专家 |
+
+在 Web profile 上启动 `dsh --no-open --port 3131`，用 Playwright（`channel: msedge`）执行：
+
+```text
+PILL_COUNT 1
+PANEL_COUNT 1
+EXPERT_ROWS 24
+CATEGORY_ROWS 14
+REA_ALREADY_ACTIVE（第二次运行时）
+SAVE_STATUS 当前：REA 逆向功能分析专家 · 已生效
+PILL_TEXT_AFTER 专家 REA 逆向功能分析专家
+ERRORS none
+```
+
+搜索 `软件逆向` 时，市场返回 5 条，第一条是 `ex_QvM298ih8T8g`，点击「使用」后：
+
+```json
+{
+  "expert": { "id": "ex_QvM298ih8T8g", "displayName": "REA 逆向功能分析专家" },
+  "applied": true,
+  "expertSkills": ["rea-analysis"]
+}
+```
+
+截图：
+
+- `docs/ui-2-panel.png`：专家面板与分类
+- `docs/ui-3-search.png`：搜索“软件逆向”
+- `docs/ui-5-skills.png`：技能开关
+- `docs/ui-7-composer.png`：输入区按钮显示当前专家
+
+过程中修复的两个真实问题：
+
+1. `webServer.register` 被解构后丢失 `this`，路由注册抛 `Cannot read properties of undefined (reading 'exact')`；改为 `bind(webServer)`。
+2. 客户端 `apiUrl()` 只返回 `pathname`，丢掉了 `?sessionId=` 与搜索参数，导致状态接口 400；改为返回 `pathname + search`。
+
 ---
 
 ## 6. 安装方式
@@ -410,7 +458,8 @@ lib/auth.js            # auto 模式、domain 推导
 lib/connector.js       # resolveToken 返回 domain
 lib/index.js           # market/categories 动作、合并去重
 lib/session.js         # slug 优先本地、ex_ 走市场
-test/core.test.mjs     # 13 项单测
+test/core.test.mjs     # 13 项核心单测
+test/webui.test.mjs    # 5 项面板路由单测
 test/host-integration.mjs
 cordis.patch.yml       # marketMode/authMode/portalBaseUrl 默认值
 ```

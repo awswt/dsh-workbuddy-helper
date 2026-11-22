@@ -628,6 +628,41 @@ sequenceDiagram
 
 ---
 
+### 8.8 输入区 Web UI
+
+入口选 `conversation.input.left`（session 作用域的 list 槽位，输入框工具栏左侧），与权限、模型选择器同一行：
+
+- 未选专家：人像图标 + “专家”；
+- 已选专家：人像图标 + “专家” + 专家名（超长省略）；
+- 点击打开面板，面板 portal 到 `document.body`，覆盖整个窗口。
+
+面板两页：
+
+| 页签 | 内容 |
+|---|---|
+| 专家 | 当前专家卡（移除）、搜索、16 个分类、专家列表（已安装/本地/专家团徽标）、使用/使用中 |
+| 技能 | 专家自带技能、全局技能、全部启用/停用、保存 |
+
+宿主半区在 `ctx.inject(['webServer'])` 内注册 5 条同源 JSON 路由：
+
+```text
+GET  /dsh-workbuddy-helper/state?sessionId=...
+GET  /dsh-workbuddy-helper/experts?query=&categoryId=&page=&pageSize=
+POST /dsh-workbuddy-helper/select   {sessionId, expertId}
+POST /dsh-workbuddy-helper/skills   {sessionId, globalMode, globalNames, expertNames}
+POST /dsh-workbuddy-helper/off      {sessionId}
+```
+
+设计取舍：
+
+- 不引入 Typert manifest：浏览器同源 `fetch` 已足够，少一层 wire schema 与客户端 `remote.*` 依赖。
+- 不新开端口：路由挂在宿主共享的 `webServer` 上，页面同源，无 CORS。
+- 写操作要求 `Origin` 与 `Host` 一致，阻止任意网页跨站切换本地会话的专家。
+- 面板只读宿主返回的状态，不做乐观更新；切换专家失败时保留旧状态并显示错误。
+- 客户端注册失败只影响按钮，不影响输入框；`apply()` 内 try/catch 兜底。
+- `apiUrl()` 必须保留 `search`，否则 `sessionId`、`query` 会被丢掉（实测踩过）。
+
+
 ## 9. 配置项
 
 ```yaml
@@ -1098,4 +1133,4 @@ v0 已实现：`workbuddy_helper` 工具、`/workbuddy-helper` 命令、在线�
 
 v0 未实现：Web 输入区 UI、Typert 远程服务、专家市场分页 UI、图片头像展示。它们不影响命令/工具路径，后续按设计文档第 10 节补齐。
 
-验证状态：`npm test` 13/13 通过；在线市场 `total_count=10000`、16 个分类；`ex_QvM298ih8T8g`（REA 逆向功能分析专家 / 软件逆向分析工程师）详情与 ZIP 包解析通过；快照 429 条仍可兜底；未在真实 DSH 宿主跑模型调用，安装后需按 15.2 第 1 步做 spike。
+验证状态：`npm test` 18/18 通过；在线市场 `total_count=10000`、16 个分类；`ex_QvM298ih8T8g`（REA 逆向功能分析专家 / 软件逆向分析工程师）详情与 ZIP 包解析通过；快照 429 条仍可兜底；输入区 Web UI 已在 Web profile 用 Playwright 验证（面板、搜索、切换、技能保存、胶囊状态）。未跑真实模型调用，安装后需按 15.2 第 1 步做 spike。
