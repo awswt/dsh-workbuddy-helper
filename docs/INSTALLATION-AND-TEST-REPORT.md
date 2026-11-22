@@ -456,7 +456,9 @@ lib/market.js          # 在线优先 + 快照兜底
 lib/bundle.js          # ZIP + tar.gz 安全解包
 lib/auth.js            # auto 模式、domain 推导
 lib/connector.js       # resolveToken 返回 domain
-lib/index.js           # market/categories 动作、合并去重
+lib/index.js           # market/categories 动作、合并去重、Web UI 接线
+lib/client.js          # 输入区「专家」按钮 + 面板
+lib/webui.js           # 同源 JSON 路由
 lib/session.js         # slug 优先本地、ex_ 走市场
 test/core.test.mjs     # 13 项核心单测
 test/webui.test.mjs    # 5 项面板路由单测
@@ -471,9 +473,10 @@ cordis.patch.yml       # marketMode/authMode/portalBaseUrl 默认值
 ```text
 git@github.com:awswt/dsh-workbuddy-helper.git
 main
+2c84660 feat: add composer expert picker and skills panel
 54abc51 feat: read the live WorkBuddy expert market with snapshot fallback
 ```
 
 安装包：`dist/dsh-workbuddy-helper-0.1.0.tgz`（本地产物，54 KB，未提交）。
 
-在线市场代码提交为 `54abc51`；本报告的后续文档提交在其之后。
+在线市场代码提交为 `54abc51`，输入区面板提交为 `2c84660`；本报告的后续文档提交在其之后。
