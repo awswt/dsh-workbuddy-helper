@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0
+
+- 技能市场拆成两个来源切换：「WorkBuddy 技能市场」（目录只读 + 复制名称，安装需在 WorkBuddy 客户端完成）与「记忆系统技能市场」（复用 dsh-mnemon 的技能管理页，可直接安装技能）。
+- 技能市场分区常驻显示，不再只在搜索时出现。
+
 ## 0.4.9
 
 - 修复：热更新后残留的旧路由在进程内继续服务导致 `cannot get required service "agents" in inactive context` 且专家切换无响应；新版本注册时主动清理本插件前缀的陈旧路由（不动其他插件），并保留双重 disposer。

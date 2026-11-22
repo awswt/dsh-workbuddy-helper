@@ -9,3 +9,5 @@ coverage/
 .workbuddy/
 package-lock.json
 dist/
+
+WorkBuddy.exe

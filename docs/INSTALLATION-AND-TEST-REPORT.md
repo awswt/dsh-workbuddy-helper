@@ -349,7 +349,13 @@ tool_result:
 
 未执行：headless profile 没有 `DEEPSEEK_API_KEY`。工具管线、提示段、技能目录用本地 Messages 兼容假模型验证，不消耗真实额度。
 
-### 5.13 陈旧路由导致专家切换失效（v0.4.9）
+### 5.14 技能市场拆分与可操作性（v0.5.0）
+
+- WorkBuddy 技能接口实测只有 `skill/list` 返回目录（总 10000 条，含 `skill_id/name/version/icon/description`）；`skill/detail|download|install|get|package` 均 404。因此本插件只能展示目录 + 复制 ID，并明确提示安装需在 WorkBuddy 客户端完成。
+- 技能市场常驻显示并加来源切换；「记忆系统技能市场」通过点击 dsh-mnemon 注册的选择器 `[data-dsh-mnemon-entry]` 打开其技能管理页，市场 tab 复用现成安装流程。
+- 验证：Web profile 有 dsh-mnemon 但 source-skills 仅作为普通依赖时 `[data-dsh-mnemon-entry]` 不存在（测试环境限制），按钮存在且无 JS 错误；用户桌面环境有完整记忆系统侧栏入口。
+
+
 
 用户更新后仍见 `cannot get required service "agents" in inactive context` 且专家点「使用」无响应。定位：旧版本注册的 webServer 路由残留在运行中的进程，新的 client 命中了绑定在已销毁 ctx 上的旧 handler。
 
