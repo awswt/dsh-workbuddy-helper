@@ -3,7 +3,7 @@ import { Readable } from 'node:stream'
 import test from 'node:test'
 import { registerWebUi } from '../lib/webui.js'
 
-function makeHarness() {
+function makeHarness(options = {}) {
   const routes = new Map()
   const calls = []
   const sessions = {
@@ -88,7 +88,7 @@ function makeHarness() {
     },
     logger: { warn() {} },
   }
-  registerWebUi(ctx, { sessions, market, bundles, connector, portal })
+  registerWebUi(ctx, { sessions, market, bundles, connector, portal, mnemon: options.mnemon })
   return { routes, calls }
 }
 
@@ -183,4 +183,32 @@ test('web UI routes require a session id and reject unknown methods', async () =
   assert.equal(missing.status, 400)
   const method = await call(routes.get('/dsh-workbuddy-helper/select'), 'GET', '/dsh-workbuddy-helper/select')
   assert.equal(method.status, 405)
+})
+
+test('the state route always reports whether dsh-mnemon is installed', async () => {
+  // 未注入探测器：客户端必须能靠 available:false 决定不渲染那个页签，
+  // 而不是拿到 undefined 后自己去猜。
+  const bare = makeHarness()
+  const withoutDetector = await call(bare.routes.get('/dsh-workbuddy-helper/state'), 'GET', '/dsh-workbuddy-helper/state?sessionId=s1')
+  assert.deepEqual(withoutDetector.body.state.mnemon, {
+    available: false, version: null, path: null, source: null,
+  })
+
+  const installed = makeHarness({
+    mnemon: async () => ({ available: true, version: '0.5.52', path: 'C:\\x\\dsh-mnemon', source: 'profile' }),
+  })
+  const withDetector = await call(installed.routes.get('/dsh-workbuddy-helper/state'), 'GET', '/dsh-workbuddy-helper/state?sessionId=s1')
+  assert.equal(withDetector.body.state.mnemon.available, true)
+  assert.equal(withDetector.body.state.mnemon.version, '0.5.52')
+})
+
+test('a failing mnemon detector degrades to unavailable instead of failing the route', async () => {
+  const { routes } = makeHarness({
+    mnemon: async () => { throw new Error('EACCES: permission denied') },
+  })
+  const result = await call(routes.get('/dsh-workbuddy-helper/state'), 'GET', '/dsh-workbuddy-helper/state?sessionId=s1')
+  assert.equal(result.status, 200)
+  assert.equal(result.body.state.mnemon.available, false)
+  // 其余字段不能被这次失败带塌。
+  assert.equal(result.body.state.expert.displayName, '演示专家')
 })

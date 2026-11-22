@@ -23,6 +23,7 @@ lib/connectors.js    连接器注册表 + 连接动作 + 会话级工具门控�
 lib/connector-flow.js 连接流程纯函数：单飞 registry、结果归一、错误分类、凭据表单、OAuth 交接。
 lib/mcp-patch.js     cordis.patch.yml 的 MCP 条目读写（vendored dsh-armory 约定，带注释保留）。
 lib/skill-install.js 技能真实安装：目录查询 → 签名 URL → zip 校验 → 原子落盘到 .dsh/skills。
+lib/mnemon.js       探测本 profile 有没有装 dsh-mnemon（决定「记忆系统技能市场」页签是否出现）。
 lib/portal.js        WorkBuddy portal 客户端（市场/技能/连接器目录接口）。
 lib/market.js        专家市场（COS 快照 + 实时接口）。
 lib/session.js       会话选择状态（专家、技能开关）与 prompt 注入。
@@ -74,10 +75,31 @@ scripts/release.mjs  版本 bump → 测试 → commit → push 一条龙。
 - 点按钮先 POST `connectors/action { action: 'openConnectorUi' }`，服务端 `recordUiOpen()` 把 `{configId, serverName, sessionId, count, at}` 记进**本插件自己的** store（`store.uiOpens`，不写对方的表），再返回 `url` / `hint` / `deepLink` / `state`；
 - `state.uiOpen` 因此能显示"已去过管理页 N 次"，面板按钮变成「再次打开管理页」。这条记录**不参与** connected 判定。
 
+## 4.2 记忆市场按 dsh-mnemon 探测（`lib/mnemon.js`）
+
+面板里「记忆系统技能市场」这个页签**不是本插件的能力**：它只是把用户送到 `dsh-mnemon` 自己的技能管理页
+（点 `[data-dsh-mnemon-entry]`，退化成两条 CustomEvent：`dsh-panel-activate` + `mnemon:anchor`）。
+所以**没装 `dsh-mnemon` 就不该出现这个页签**——它会指向一个不存在的页面。
+
+- 探测走文件系统，不走 ctx 服务：`dsh-mnemon` 只 `ctx.provide('mnemonStarterReady', true)`
+  （`lib/starter.js`），那是个启动就绪标记，没有可复用的连接/技能服务面。
+- 候选按序：`<profileDir>/node_modules/dsh-mnemon`（`profile`）→
+  `<dshHome>/profiles/node_modules/dsh-mnemon`（`shared`）→ 只有拿不到 profileDir 时才补
+  `ownProfileDir()`（`self`）。**故意不扫兄弟 profile**：别的 profile 装了 mnemon ≠ 当前会话有这个侧边栏入口。
+- `readCandidate()` 要求 `package.json` 的 `name === 'dsh-mnemon'`：目录存在但没 `package.json`（半装）、
+  同名空壳、坏 JSON，一律当"没装"。
+- `createMnemonDetector()` 带 `DETECT_TTL_MS` = 60s 缓存，`force=true` 跳过；`profileDir` 可传函数（惰性，
+  因为构造控制器时 profileDir 可能还没解析）。
+- 结果形状固定 `{ available, version, path, source }`，不可用时四个字段是 `false / null / null / null`——
+  面板与模型都按这个形状读，别返回 `undefined`。
+- `/dsh-workbuddy-helper/state` 里 `mnemon` 这一项**失败降级为 unavailable**，不让探测异常拖垮整条路由。
+  客户端 `marketIsMemory = mnemonAvailable && marketSource === 'memory'`：用户停在 memory 页签而插件被卸载时，
+  渲染自动回落 WorkBuddy 市场，而不是白屏。
+
 ## 5. 验证
 
 ```powershell
-node --test test/*.test.mjs          # 107 条，必须全绿
+node --test test/*.test.mjs          # 116 条，必须全绿
 node --check lib/<file>.js           # 改完随手检
 ```
 
@@ -135,6 +157,7 @@ node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin
 18. 技能安装的锁目录建在 `<skillsRoot>` 里，所以**必须先 `mkdir(root)` 再上锁**：首次安装时 `.dsh/skills` 还不存在，直接 `mkdir(<root>/.lock-<slug>)` 会 `ENOENT`。另外锁必须是"目录 + 过期时间"而不是纯进程内队列，因为面板与 `workbuddy_helper` 工具可能来自不同进程。
 19. 隔离 home 里 `storages/mcp_connector.json` 不存在 → `catalogTotal` 是 0。这**不是**插件 bug（`scripts/e2e.mjs` 会从真 home 复制目录表，但故意丢掉 `connections`/`grants`）。写断言前先看目录是不是空的。
 20. `dsh-mcp-connector` 的管理页现在**只读** `uiLocale`/`locale`，`?connector=<id>` 不会被解析——所以不能假装能定位到某一行。但别把这个结论写死进代码：`uiCapability()` 会探测页面文本，上游一旦开始读深链参数就自动切换（§4.1）。改这块时两个方向都要测：不支持时 URL 必须干净，支持时参数名必须跟着探测结果走。
+21. `dsh-mnemon` 存在与否要**问文件系统**，别猜 `ctx.get()`：它只 provide 了 `mnemonStarterReady` 这种标记，没有服务面。另外 `profiles/desktop` 装了不代表 `profiles/web` 也装了（实测前者有 0.5.52、后者没有），探测必须带 profileDir，否则会把"别的 profile 装了"当成"这里也有"。
 
 ## 8. 边界
 
