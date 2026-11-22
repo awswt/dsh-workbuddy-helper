@@ -688,6 +688,11 @@ POST /dsh-workbuddy-helper/off      {sessionId}
 `webServer.register()` 返回 disposer，必须随插件 fiber / 注入作用域一起释放。热更新后共享 webServer 仍在，若旧路由残留，新 client 会命中绑定在失效 ctx 上的旧 handler，表现为 agents 服务错误、专家切换失效与新路由 404。注册时收集 disposer，`ctx.effect` 与 scoped effect 双保险；重注册前先清理。不要从插件根 ctx 调用 `ctx.get('agents')` 做兜底扫描。
 
 
+### 8.12 复用 dsh-armory 连接器市场
+
+当本机装有 dsh-armory 时，连接器页不另造授权协议：客户端按需获取 `remote.mcpManager`，使用 `wbConnectorCatalog/wbInstallState/wbConnectorInstall/wbOAuthBegin/wbOAuthOpen/wbOAuthPoll/wbOAuthCancel`。安装返回 `needsAuth` 才发 OAuth；令牌与配置留在军械库，本插件只消费结果并刷新卡片。没有军械库时回退 WorkBuddy 市场（只读 + 复制 ID）。远端命名空间可能晚于本插件注册，不能缓存 apply 时刻的 null。
+
+
 ## 9. 配置项
 
 ```yaml

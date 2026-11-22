@@ -349,7 +349,18 @@ tool_result:
 
 未执行：headless profile 没有 `DEEPSEEK_API_KEY`。工具管线、提示段、技能目录用本地 Messages 兼容假模型验证，不消耗真实额度。
 
-### 5.11 热更新残留路由事故（v0.4.6）
+### 5.12 按 dsh-armory 文档复刻连接器页（v0.4.8）
+
+按 dsh-armory README 的连接器市场契约（316+ 个官方连接器、可装性/真实连接态、401 就地重新授权、不代填 token）改造本插件的连接器页：
+
+- 客户端 `inject` 增加 `remote`，按需解析 `remote.mcpManager`（插件加载顺序不固定，不能只在 apply 时取一次）。
+- 目录：`wbConnectorCatalog()` + `wbInstallState()` → 卡片网格（图标/名称/厂商/描述/传输/认证/标签/状态）、全部/已安装/可安装/仅展示筛选、搜索、详情。
+- 操作：`wbConnectorInstall()`；返回 `needsAuth` 时走 `wbOAuthBegin()` → `wbOAuthOpen()` 打开浏览器 → `wbOAuthPoll()` 轮询 → 成功后自动重装；取消走 `wbOAuthCancel()`。需要手工令牌的连接器显示说明，绝不代填或猜测地址。
+- 未安装 dsh-armory 时保留 WorkBuddy 市场 + 复制 ID 回退；本地连接器插件的会话级工具门控不变。
+
+验证（web3 profile 安装 dsh-armory + 0.4.8）：`CARDS 632`（军械库全量目录）、`FILTERS 全部|已安装|可安装|仅展示`、首卡字段含 streamable-http/server-side/技能数/可见范围、`DETAIL_VISIBLE 1`、`ERRORS none`；`npm test` 27/27。
+
+
 
 用户更新后反馈：面板常驻 `cannot get required service "agents" in inactive context`、专家切换无响应、技能市场仍返回 404。
 

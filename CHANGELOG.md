@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.8
+
+- 修复：dsh-armory 的 `remote.mcpManager` 晚于本插件注册，改为按需解析，避免卡片页因加载顺序退回旧模式。
+
+## 0.4.7
+
+- 连接器市场改为复用 dsh-armory 的 `remote.mcpManager`：卡片网格（状态/厂商/传输/标签/安装按钮）、分类筛选、详情与 OAuth 授权弹层（`wbOAuthBegin/Open/Poll/Cancel`）对齐军械库流程；未安装军械库时回退 WorkBuddy 市场 + 复制 ID。
+
 ## 0.4.6
 
 - 修复：插件热更新后旧 webServer 路由未释放，导致面板出现 `cannot get required service "agents" in inactive context`、专家切换无响应、技能市场 404。现在路由随插件/作用域生命周期释放，重新注册前先清理旧路由。

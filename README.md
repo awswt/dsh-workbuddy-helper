@@ -23,7 +23,9 @@ DeepSeek Harness 插件：在当前会话内选择、切换、移除专家与技
 
 **连接器**：上半区是本机连接器插件（如 dsh-windows-mcp），开关只影响当前会话的工具；下半区「连接器市场」从 WorkBuddy 连接器市场拉取（支持名称/描述搜索），显示来源图标与「已连接」状态，操作按钮为「复制 ID」（精确复制连接器 ID，不再误跳 GitHub）；未登录时退回本地快照。市场连接器的授权由 WorkBuddy 客户端管理，已连接后其工具即可在本会话使用。
 
-![连接器市场](docs/ui-14-connector-market.png)
+![军械库连接器市场](docs/ui-16-armory-market.png)
+
+若本机安装了 **dsh-armory**，连接器市场直接复用它的 `remote.mcpManager` 服务：卡片网格、状态徽标、筛选、详情、安装与 OAuth 授权弹层（`wbOAuthBegin/Open/Poll/Cancel`）与军械库一致，凭据由军械库保存；未安装时回退 WorkBuddy 市场 + 复制 ID。
 
 深色模式：主按钮等控件使用单色反色方案，两个主题都可读。
 
