@@ -159,6 +159,7 @@ node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin
 20. `dsh-mcp-connector` 的管理页现在**只读** `uiLocale`/`locale`，`?connector=<id>` 不会被解析——所以不能假装能定位到某一行。但别把这个结论写死进代码：`uiCapability()` 会探测页面文本，上游一旦开始读深链参数就自动切换（§4.1）。改这块时两个方向都要测：不支持时 URL 必须干净，支持时参数名必须跟着探测结果走。
 21. 装 GitHub 源时 pnpm 会拦 git 包的 `prepare` 脚本（`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` / DSH 那句 "add the exact key … under allowBuilds"）。这不是网络问题也不是插件问题，重跑一次通常就过——`scripts/e2e.mjs` 的 `installPlugin()` 已经内置"只对这个特征重试一次"，别在外面套 `for` 循环把真错误也重试掉。诊断文案用 `explainFailure()` 取带 `ERR_/pnpm:/dsh:/Error:` 的行，**不要** `stderr.slice(-400)`：曾经就是这么截出 `bhelper-e2e`（临时路径的尾巴）当"原因"的。
 22. `dsh-mnemon` 存在与否要**问文件系统**，别猜 `ctx.get()`：它只 provide 了 `mnemonStarterReady` 这种标记，没有服务面。另外 `profiles/desktop` 装了不代表 `profiles/web` 也装了（实测前者有 0.5.52、后者没有），探测必须带 profileDir，否则会把"别的 profile 装了"当成"这里也有"。
+23. **脚本里别给子进程用 `stdio: 'inherit'`**。Windows 上 `git` 会把 `LF will be replaced by CRLF` 这类提示、`git push` 会把 `Everything up-to-date` 写到 **stderr**；透传后外层 PowerShell 把它们记成 `NativeCommandError`，整条命令的退出码就变成 1——`node scripts/release.mjs` 曾经连续三次"发布成功但报 exit 1"。现在 `run()` 一律 `stdio: ['ignore','pipe','pipe']` 再 `forward()` 到 stdout；仓库也加了 `.gitattributes`（`* text=auto eol=lf`）从源头消掉 CRLF 警告。判断发布是否成功要看有没有打印 `released vX.Y.Z` 与 `git status`，别只信退出码。
 
 ## 8. 边界
 

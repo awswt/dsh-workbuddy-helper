@@ -1,0 +1,21 @@
+# 仓库里一律用 LF。Windows 上 core.autocrlf=true 会让 git 对每个"工作区是 LF"的文件
+# 打印 `warning: ... LF will be replaced by CRLF the next time Git touches it`——
+# 那些警告走 stderr，外层 PowerShell 会当成 NativeCommandError，进而把
+# `node scripts/release.mjs` 的退出码变成 1（发布其实已经成功）。显式 eol=lf 后不再有该警告。
+* text=auto eol=lf
+
+# 二进制别让 git 试图转换换行。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.zip binary
+*.tgz binary
+*.7z binary
+*.exe binary
+*.dll binary
+*.node binary
+*.woff binary
+*.woff2 binary
