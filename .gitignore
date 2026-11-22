@@ -13,3 +13,7 @@ dist/
 WorkBuddy.exe
 app-64.7z
 .dsh/
+
+# 发布产物：tgz 由 scripts/release.mjs 用 npm pack 生成，体积大且可重建。
+# 说明（docs/releases/*.md）要进版本库，产物本身不进。
+release/

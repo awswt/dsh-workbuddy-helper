@@ -14,7 +14,8 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
-import { bumpVersion, parseArgs, run } from '../scripts/release.mjs'
+import { bumpVersion, parseArgs, renderNotes, run } from '../scripts/release.mjs'
+import { tapPassCount } from '../scripts/spawn-util.mjs'
 
 const execFileAsync = promisify(execFile)
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -74,12 +75,54 @@ test('bumpVersion walks patch, minor and major without inventing a prerelease', 
 })
 
 test('parseArgs defaults to a patch release that pushes', () => {
-  assert.deepEqual(parseArgs([]), { bump: 'patch', dryRun: false, push: true, message: null })
+  // artifacts 默认 true：用户明确要求"推 git 时要构建 release 版本，而不是只打 tag"。
+  assert.deepEqual(parseArgs([]), { bump: 'patch', dryRun: false, push: true, artifacts: true, message: null })
   assert.deepEqual(parseArgs(['--minor', '--dry-run', '--no-push', '-m', 'feat: x']), {
     bump: 'minor',
     dryRun: true,
     push: false,
+    artifacts: true,
     message: 'feat: x',
   })
+  assert.equal(parseArgs(['--no-artifacts']).artifacts, false)
   assert.throws(() => parseArgs(['--nope']), /unknown argument: --nope/)
+})
+
+test('renderNotes always carries the version, the test count and the tarball digest', () => {
+  // 发布说明是给人看的那份"release 信息"：装机命令、sha256、这一版改了什么，一条都不能少。
+  const notes = renderNotes({
+    version: '0.7.0',
+    previous: 'v0.6.16',
+    artifact: { name: 'dsh-workbuddy-helper-0.7.0.tgz', bytes: 1234, sha256: 'a'.repeat(64) },
+    testCount: 213,
+    testFilesCount: 17,
+    commits: ['abc1234 feat: sign in without dsh-connect-workbuddy'],
+    changes: ['M lib/wb-login.js'],
+    message: 'chore(release): v0.7.0',
+  })
+  assert.match(notes, /^# v0\.7\.0$/m)
+  assert.match(notes, /上一个版本：`v0\.6\.16`/)
+  assert.match(notes, /测试：213 条通过（17 个测试文件）/)
+  assert.match(notes, /release\/v0\.7\.0\/dsh-workbuddy-helper-0\.7\.0\.tgz/)
+  assert.match(notes, new RegExp(`sha256  ${'a'.repeat(64)}`))
+  assert.match(notes, /dsh plugin --profile <profile> add \/absolute\/path\/to\/dsh-workbuddy-helper-0\.7\.0\.tgz/)
+  assert.match(notes, /M lib\/wb-login\.js/)
+  assert.match(notes, /abc1234 feat: sign in without dsh-connect-workbuddy/)
+})
+
+test('renderNotes degrades cleanly when there is no artifact and no previous tag', () => {
+  const notes = renderNotes({
+    version: '1.0.0', previous: null, artifact: null, testCount: null,
+    testFilesCount: 1, commits: [], changes: [], message: 'chore(release): v1.0.0',
+  })
+  assert.match(notes, /测试：\? 条通过/)
+  assert.doesNotMatch(notes, /## 安装包/)
+  assert.doesNotMatch(notes, /上一个版本/)
+  assert.match(notes, /## 最近提交|^$/m)
+})
+
+test('tapPassCount reads node:test output and refuses to guess', () => {
+  assert.equal(tapPassCount('# tests 213\n# pass 213\n# fail 0\n'), 213)
+  assert.equal(tapPassCount('not tap at all'), null)
+  assert.equal(tapPassCount(undefined), null)
 })

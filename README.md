@@ -12,6 +12,8 @@ DeepSeek Harness 插件：在当前会话里挑选**专家**、管理**技能**�
 
 需要 DSH 桌面版（44.x 起）与 Node `22.19+` 或 `24+`。
 
+不需要预装 `dsh-connect-workbuddy`，也不需要 WorkBuddy 桌面端——本插件自己完成 WorkBuddy 登录并自己保存登录态。
+
 ### 从 npm 安装
 
 ```bash
@@ -45,7 +47,7 @@ dsh plugin --profile <profile> add git+https://github.com/awswt/dsh-workbuddy-he
 
 ## 面板
 
-对话输入框左侧是「会话辅助」按钮（选中专家后按钮上显示当前专家名）。点开是三个页签：
+对话输入框左侧是「会话辅助」按钮（选中专家后按钮上显示当前专家名）。点开是四个页签：
 
 **专家**：搜索 WorkBuddy 专家市场（10,000 位）与本机已装专家，按分类筛选，一键切换或移除。
 
@@ -72,6 +74,8 @@ dsh plugin --profile <profile> add git+https://github.com/awswt/dsh-workbuddy-he
 
 若本机装了 **dsh-armory**，连接器页会额外复用它的 `remote.mcpManager` 服务：卡片网格、详情、安装与 OAuth 授权弹层由军械库提供，凭据也由它保存。没装时用本插件自带的目录与连接流程，两者都能把工具接进当前会话。
 
+**账号**：本插件自己的 WorkBuddy 登录（见「WorkBuddy 账号接入」）。选国内版/国际版 → 开始登录 → 扫码 → 我已完成；下半部分只读列出 `dsh-connect-workbuddy` 的旧账号，可一键导入。
+
 > 截图可能落后于当前界面（面板迭代较快），以实际界面为准；更多历史截图在 `docs/ui-*.png`。
 
 面板由同源的 `/dsh-workbuddy-helper/*` JSON 路由驱动，不额外开端口，也不会把 token 交给浏览器。
@@ -89,6 +93,7 @@ dsh plugin --profile <profile> add git+https://github.com/awswt/dsh-workbuddy-he
 | `set-skills` | 调整技能开关：`mode=all\|selected`、`names=a,b`、`expertNames=c,d` |
 | `skill-market` | 搜索 WorkBuddy 技能市场，参数 `query`、`page`、`pageSize`（默认 12，上限 24） |
 | `connector` | 连接器子动作：`list`（默认，目录 + 插件 + 已连接概览）、`state`、`connect`、`repair`、`cancel`、`disconnect`、`unbind`、`enable`、`disable`，配合 `connectorId`；`connect` 需要凭据时用 `token` |
+| `account` | WorkBuddy 登录态：`accountAction=list`（默认）、`login`（配合 `region=cn\|global`，返回扫码链接）、`poll`（配合 `loginId`）、`cancel`、`refresh`（配合 `accountId`）、`remove`、`import`（把旧 `dsh-connect-workbuddy` vault 搬过来） |
 | `market` | 搜索在线专家市场 + 本机已装专家，结果带 `source=portal\|cos\|local`、`installed`、`marketTotal`，参数 `query` |
 | `categories` | 在线市场的 16 个分类（快照兜底时为快照分类） |
 
@@ -102,6 +107,8 @@ workbuddy_helper(action="skill-market", query="word", pageSize=12)
 workbuddy_helper(action="skills", skillAction="install", skillId="skill_2095395851789164544")
 workbuddy_helper(action="skills", skillAction="installed")
 workbuddy_helper(action="connector", connectorAction="connect", connectorId="amap", token="...")
+workbuddy_helper(action="account", accountAction="login", region="cn")
+workbuddy_helper(action="account", accountAction="poll", loginId="wbh_...")
 workbuddy_helper(action="market", query="软件逆向分析工程师")
 ```
 
@@ -114,9 +121,13 @@ workbuddy_helper(action="market", query="软件逆向分析工程师")
 /workbuddy-helper skills
 /workbuddy-helper skills install skill_2095395851789164544
 /workbuddy-helper skills installed
+/workbuddy-helper skills install skill_2095395851789164544 --force
 /workbuddy-helper connector list
 /workbuddy-helper connector connect amap
 /workbuddy-helper connector state amap
+/workbuddy-helper account login region=cn
+/workbuddy-helper account poll loginId=wbh_...
+/workbuddy-helper account import
 /workbuddy-helper market 内容
 ```
 
@@ -161,8 +172,10 @@ workbuddy_helper(action="market", query="软件逆向分析工程师")
 | `allowPublicMarketAuth` | `false` | 允许把 connector token 发到公开快照 host；默认拒绝，防止误配泄露 |
 | `maxPromptChars` | `60000` | 专家提示词截断上限 |
 | `maxSelectedSkills` | `64` | 单会话技能上限 |
-| `dataDir` | `$DSH_HOME/workbuddy-helper` | sidecar 与缓存目录 |
-| `localRoots` | 两个 WorkBuddy 目录 | 本地专家来源，只读 |
+| `dataDir` | `$DSH_HOME/workbuddy-helper` | sidecar、缓存与账号库目录 |
+| `accountsDir` | `$DSH_HOME/workbuddy-helper/accounts` | 本插件自己的账号库 |
+| `legacyVaultDir` | `$DSH_HOME/workbuddy-vault` | 旧插件 `dsh-connect-workbuddy` 的 vault，只读；设为空串即完全不读 |
+| `localRoots` | 两个 `~/.workbuddy` 目录 | 本地专家来源，只读；目录不存在就等于没有本机专家 |
 
 ## 两个专家市场入口（重要）
 
@@ -177,22 +190,57 @@ WorkBuddy 有两条完全不同的数据源，条数差异很大：
 
 ## WorkBuddy 账号接入
 
-插件只读 `dsh-connect-workbuddy` 的账号库：
+**本插件自己完成登录**，不需要装 `dsh-connect-workbuddy`，也不需要 WorkBuddy 桌面端。
+
+打开面板的**账号**页签：
+
+1. 选站点——`国内版`（`www.codebuddy.cn`）或 `国际版`（`www.workbuddy.ai`）。这两个是独立的账号体系，一个域名签发的 token 会被另一个域名的网关拒绝，所以要选你真正在用的那个。
+2. 点「开始登录」，浏览器会打开一个扫码页。
+3. 扫码完成后回到面板点「我已完成」。
+
+登录成功后 token 存进本插件自己的账号库：
 
 ```text
-$DSH_HOME/workbuddy-vault/<region>/<accountId>.json
+$DSH_HOME/workbuddy-helper/accounts/<region>/<accountId>.json
 ```
 
-行为：
+目录 `0700`、文件 `0600`；面板与工具里显示的都是脱敏视图，`accessToken` 永远不会出现在 `status()`、日志或错误信息里。
+access token 快过期时自动用 refresh token 换新的，换不动了才让你重新登录。
 
-- `connector` 动作返回 `installed / profile / version / accountCount / usableAccountCount / accounts`；
-- 账号 id 与昵称做掩码，token 永远不出现在 `status()`；
-- 不刷新 token、不写 vault、不解密；
-- `authMode: auto`（默认）时，在线市场请求使用第一个未过期账号的 `accessToken`，基址取该账号的 `auth.domain`；
-- `authMode: workbuddy-connector` 是它的严格版本：没有可用 token 就报错，不会退回快照；
-- token 只会发往 `allowHosts` 内的 host，且只发给在线市场 API；签名 CDN 下载 URL 不带 Authorization 头。
+### 从 dsh-connect-workbuddy 迁过来
 
-没有安装 `dsh-connect-workbuddy` 也能用：专家、技能、连接器的目录与安装走公开接口和 WorkBuddy 登录态，`status` 里会如实显示 `installed: false`。
+如果你以前装过那个插件、已经登录过，它的 vault 会被**只读**地列在账号页下半部分，点「全部导入本插件」即可搬过来，之后可以卸载它：
+
+```text
+$DSH_HOME/workbuddy-vault/<region>/<accountId>.json   # 只读，本插件永不写入
+```
+
+也可以纯命令行：
+
+```text
+workbuddy-helper account login region=cn
+workbuddy-helper account poll loginId=<id>
+workbuddy-helper account import
+```
+
+`authMode: auto`（默认）的来源顺序是「本插件账号库 → 旧 vault」，用哪个会在 `status` 的 `source` 里写清楚
+（`helper-accounts` / `dsh-connect-workbuddy` / `snapshot-only`）。
+`authMode: workbuddy-connector` 是严格版：没有可用 token 就报错，不退回公开快照。
+
+token 只会发往 `allowHosts` 内的 host，且只发给市场 API；签名 CDN 下载 URL 不带 Authorization 头。
+
+### 不装 WorkBuddy 桌面端会有影响吗
+
+没有。桌面端和本插件没有任何文件或进程关系——全仓库在 `lib/` 下搜 `WorkBuddy.exe` / `asar` 零命中。
+
+唯一沾边的是「本机已装专家」这一栏，它读：
+
+```text
+~/.workbuddy/plugins/marketplaces/experts/plugins
+~/.workbuddy/plugins/marketplaces/my-experts
+```
+
+目录不存在就当作"本机没有额外专家"，不是错误。专家市场（10,000 位）、技能安装、连接器目录全部走 https，照常可用。
 
 企业网关或需要鉴权的市场：
 
@@ -244,6 +292,7 @@ credentialRef: WB_EXPERT_TOKEN
 
 ```text
 $DSH_HOME/workbuddy-helper/
+├─ accounts/<region>/<accountId>.json   # 登录态（目录 0700、文件 0600，含 token）
 ├─ connectors.json          # 连接器绑定状态、会话开关、管理页跳转埋点
 ├─ cache/
 │  ├─ manifest.json
@@ -254,7 +303,7 @@ $DSH_HOME/workbuddy-helper/
    └─ <sha256(sessionId)>.json
 ```
 
-清理缓存不会影响会话选择；下次使用会重新下载。`connectors.json` 里含连接器凭据，别提交进版本库。
+清理缓存不会影响会话选择；下次使用会重新下载。`accounts/` 与 `connectors.json` 都含凭据，别提交进版本库、别共享出去。
 
 工作区里另有两处：
 
@@ -278,7 +327,8 @@ $DSH_HOME/workbuddy-helper/
 检查是不是装到了项目根之外。技能加载器只扫 `<projectRoot>/.dsh/skills`。
 
 **技能市场显示「未检测到 WorkBuddy 登录态」**
-先在 WorkBuddy 客户端登录。插件读的是 `$DSH_HOME/workbuddy-vault/` 下的账号文件。
+打开面板的**账号**页签登录一次即可。本插件自己登录、自己存 token，不需要装 `dsh-connect-workbuddy`。
+以前装过那个插件的话，也可以直接在同一个页签点「全部导入本插件」。
 
 **专家市场只有 429 条**
 那是公开快照，没有登录态时的兜底。登录 WorkBuddy 就能拿到 10,000 条在线市场。
@@ -288,6 +338,7 @@ $DSH_HOME/workbuddy-helper/
 
 ## 相关文档
 
+- [自己登录 WorkBuddy（三个端点实测与分层凭据）](docs/workbuddy-own-login.md)
 - [逆向分析：WorkBuddy 连接器管理](docs/workbuddy-connector-reverse-engineering.md)
 - [连接器模块改造与验证报告](docs/connector-upgrade-test-report.md)
 - [端到端基线（可复跑的 11 项检查）](docs/e2e-baseline.md)

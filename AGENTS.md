@@ -24,17 +24,22 @@ lib/connector-flow.js 连接流程纯函数：单飞 registry、结果归一、�
 lib/mcp-patch.js     cordis.patch.yml 的 MCP 条目读写（vendored dsh-armory 约定，带注释保留）。
 lib/skill-install.js 技能真实安装：目录查询 → 签名 URL → zip 校验 → 原子落盘到 .dsh/skills。
 lib/mnemon.js       探测本 profile 有没有装 dsh-mnemon（决定「记忆系统技能市场」页签是否出现）。
+lib/wb-login.js      WorkBuddy 登录协议层：三个端点 + 刷新 + 进程内登录会话表（无 DSH import）。
+lib/wb-vault.js      本插件自己的账号库：落盘、目录锁、脱敏视图、从旧 vault 导入。
+lib/wb-accounts.js   账号状态机：start/poll/cancel/list/refresh/remove/importLegacy。
+lib/connector.js     分层凭据源：helper（自有库，可刷新）→ vault（只读兼容）→ DSH credential。
 lib/portal.js        WorkBuddy portal 客户端（市场/技能/连接器目录接口）。
 lib/market.js        专家市场（COS 快照 + 实时接口）。
 lib/session.js       会话选择状态（专家、技能开关）与 prompt 注入。
-lib/webui.js         面板 HTTP 路由（状态、目录、动作、技能安装）。
+lib/webui.js         面板 HTTP 路由（状态、目录、动作、技能安装、账号）。
 lib/client.js        浏览器端 UI（React，无构建，通过宿主注入的 h/React）。
 lib/auth.js          凭据解析、URL 白名单、错误类型。
 lib/bundle.js        专家包下载与解包。
 lib/util.js          dshHome、expandHome 等小工具。
 test/*.test.mjs      node:test 单测，全部用假 portal / 假 fetch / 临时目录。
-docs/                设计、逆向、端到端与连接器改造报告。
-scripts/release.mjs  版本 bump → 测试 → commit → push 一条龙。
+docs/                设计、逆向、端到端与连接器改造报告；docs/releases/ 每次发布的说明。
+scripts/release.mjs  测试 → bump → 构建 release 产物 → commit → tag → push。
+scripts/spawn-util.mjs 子进程封装（捕获两路、只写 stdout）与 TAP 解析。
 ```
 
 ## 3. 连接器模型（改这里之前必须理解）
@@ -96,10 +101,43 @@ scripts/release.mjs  版本 bump → 测试 → commit → push 一条龙。
   客户端 `marketIsMemory = mnemonAvailable && marketSource === 'memory'`：用户停在 memory 页签而插件被卸载时，
   渲染自动回落 WorkBuddy 市场，而不是白屏。
 
+## 4.3 账号与登录（`lib/wb-login.js` / `wb-vault.js` / `wb-accounts.js` / `connector.js`）
+
+本插件**自己**完成 WorkBuddy 登录，不再依赖 `dsh-connect-workbuddy`。完整实测记录在
+`docs/workbuddy-own-login.md`；这里只留改代码时必须知道的部分。
+
+**两层依赖不是一件事**：
+
+- `dsh-connect-workbuddy`（另一个插件）过去只提供了 `$DSH_HOME/workbuddy-vault/<region>/<accountId>.json`
+  这一份 json。现在它只是**只读兼容源**，`accountAction=import` 能一次性搬走，搬完可以卸载。
+- WorkBuddy **桌面端**与本插件毫无文件/进程关系。唯一沾边是 `localRoots` 的两个 `~/.workbuddy/...` 目录
+  （「本机已装专家」），`BundleStore.listLocal()` 对读不到的 root 直接 `continue`。没装桌面端，三个市场照常工作。
+
+**三个端点**（`POST /v2/plugin/auth/state?platform=workbuddy` → `GET /v2/plugin/auth/token?state=` →
+`GET /v2/plugin/account`，刷新是 `POST /v2/plugin/auth/token/refresh` 带 `X-Refresh-Token`、**不带** `Authorization`）：
+
+- `11217 login ing...` 是"还没扫码"，HTTP 200，**不是错误**；未知 state 也回 11217，所以 state 的生死只能本地管。
+- 终止码才终止：`12153` / `12151` / `40001` / `41001`。
+- `/v2/plugin/login/account` 对任何凭据都回 `12151` 空 data，**只能当回退**；先问它会把每个账号算成"未命名"。
+- 区域决定 base，且**必须**在申请 state 前定下来：一个域名签发的 token 会被另一个域名的网关拒绝。
+  白名单在 `REGIONS`（cn = `www.codebuddy.cn`；global = `www.workbuddy.ai` + `www.codebuddy.ai`）。
+
+**分层凭据源**（`lib/connector.js`）：`helper`（自有库，可刷新）→ `vault`（只读）→ DSH credential。
+排序是 **helper 优先，即使它更早过期**——那份才是我们能刷新的；优先用 vault 等于把流程卡在必死的凭据上。
+`resolveFreshToken()` 对 vault 的票**一次刷新请求都不发**；刷新失败时旧票还活着就继续用（带 `refreshError`），
+死了才抛。三条硬规矩：vault 永不写入、`status()`/`listAccounts()` 不返回 token、`resolveToken()` 是唯一读出明文处。
+
+**账号库**（`lib/wb-vault.js`）：`<dataDir>/accounts/<region>/<accountId>.json`，目录 `0700`、文件 `0600`、
+临时文件 + rename 原子替换、跨进程 `<region>-<hash>` 目录锁。`accountIdOf(uid)` 取 `sha256(uid)` 前 24 位——
+同账号重登落到同一个文件，且不把 36 位 uid 原值当文件名。
+
+**落盘在服务层**：`createAccountService().poll()` 成功那一刻就 `saveAccount()`，写盘失败返回
+`signed in, but the account could not be stored: …`。面板 / 工具 / 斜杠命令三条入口共享这一份逻辑。
+
 ## 5. 验证
 
 ```powershell
-node --test test/*.test.mjs          # 127 条，必须全绿
+node --test test/*.test.mjs          # 216 条，必须全绿
 node --check lib/<file>.js           # 改完随手检
 node scripts/normalize-eol.mjs       # 体检工作区换行；--write 才落盘
 ```
@@ -163,6 +201,11 @@ node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin
 21. 装 GitHub 源时 pnpm 会拦 git 包的 `prepare` 脚本（`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` / DSH 那句 "add the exact key … under allowBuilds"）。这不是网络问题也不是插件问题，重跑一次通常就过——`scripts/e2e.mjs` 的 `installPlugin()` 已经内置"只对这个特征重试一次"，别在外面套 `for` 循环把真错误也重试掉。诊断文案用 `explainFailure()` 取带 `ERR_/pnpm:/dsh:/Error:` 的行，**不要** `stderr.slice(-400)`：曾经就是这么截出 `bhelper-e2e`（临时路径的尾巴）当"原因"的。
 22. `dsh-mnemon` 存在与否要**问文件系统**，别猜 `ctx.get()`：它只 provide 了 `mnemonStarterReady` 这种标记，没有服务面。另外 `profiles/desktop` 装了不代表 `profiles/web` 也装了（实测前者有 0.5.52、后者没有），探测必须带 profileDir，否则会把"别的 profile 装了"当成"这里也有"。
 23. **脚本里别给子进程用 `stdio: 'inherit'`**。Windows 上 `git` 会把 `LF will be replaced by CRLF` 这类提示、`git push` 会把 `Everything up-to-date` 写到 **stderr**；透传后外层 PowerShell 把它们记成 `NativeCommandError`，整条命令的退出码就变成 1——`node scripts/release.mjs` 曾经连续三次"发布成功但报 exit 1"。现在 `run()` 一律 `stdio: ['ignore','pipe','pipe']` 再 `forward()` 到 stdout；仓库也加了 `.gitattributes`（`* text=auto eol=lf`）从源头消掉 CRLF 警告。判断发布是否成功要看有没有打印 `released vX.Y.Z` 与 `git status`，别只信退出码。
+
+24. **一个 realm 签发的 token 会被另一个 realm 拒绝**。登录的区域（cn=`www.codebuddy.cn` / global=`www.workbuddy.ai`+`www.codebuddy.ai`）必须在**申请 state 之前**定下来：state 与后续的 token 绑定在同一个 base 上。别想着"先 cn 拿 state、再换 global 换票"，那不是换域名的事。
+25. `11217 login ing...` 是 HTTP **200**，代表"还没扫码"，**不是错误**；未知 state 也回 11217，所以本地不能靠它判断 state 是否还有效，只能用自己的 TTL。真正的终止码是 `12153` / `12151` / `40001` / `41001`。另外 `/v2/plugin/login/account` 对任何凭据都回 `12151` 空 data，**只能当回退**——先问它会把每个账号算成"未命名"。
+26. `WorkBuddyConnector` 里存账号库的字段叫 **`this.store`**，不能叫 `this.accounts`：`accounts()` 是方法名，同名字段会把它整个遮住，症状是 `connector.accounts is not a function`。同理 `createAccountService().list().summary.dir` 要读 `connector.store.root`，**不能**读 `status.own.dir`（那是 `mask()` 过的给模型看的一行摘要，`C:\Users…\own` 点不开）。
+27. `lib/wb-vault.js` 的目录锁名是 `<region>-<hash(uid)>`，不是 `<region>-<uid>`。写测试造残留锁时必须算 `accountIdOf(uid)`，否则"该抛却不抛"，你会以为是锁失效了。
 
 ## 8. 边界
 

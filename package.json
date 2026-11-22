@@ -1,6 +1,6 @@
 {
   "name": "dsh-workbuddy-helper",
-  "version": "0.6.16",
+  "version": "0.8.0",
   "description": "Session assistant for DeepSeek Harness: expert picker, per-session skills/connector gating, WorkBuddy skill & connector markets, composer panel.",
   "type": "module",
   "main": "lib/index.js",
@@ -13,6 +13,10 @@
     "./connector-flow": "./lib/connector-flow.js",
     "./mcp-patch": "./lib/mcp-patch.js",
     "./skill-install": "./lib/skill-install.js",
+    "./wb-login": "./lib/wb-login.js",
+    "./wb-vault": "./lib/wb-vault.js",
+    "./wb-accounts": "./lib/wb-accounts.js",
+    "./mnemon": "./lib/mnemon.js",
     "./market": "./lib/market.js",
     "./portal": "./lib/portal.js",
     "./bundle": "./lib/bundle.js",
@@ -70,6 +74,8 @@
     "docs/workbuddy-connector-reverse-engineering.md",
     "docs/e2e-baseline.md",
     "docs/connector-upgrade-test-report.md",
+    "docs/workbuddy-own-login.md",
+    "docs/releases",
     "docs/ui-*.png"
   ],
   "publishConfig": {
