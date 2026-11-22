@@ -505,10 +505,11 @@ cordis.patch.yml       # marketMode/authMode/portalBaseUrl 默认值
 ```text
 git@github.com:awswt/dsh-workbuddy-helper.git
 main
+0db88a7 feat: add connectors tab, skills search and dark-mode safe primary button
 2c84660 feat: add composer expert picker and skills panel
 54abc51 feat: read the live WorkBuddy expert market with snapshot fallback
 ```
 
 安装包：`dist/dsh-workbuddy-helper-0.2.7.tgz`（本地产物，68 KB，未提交）。
 
-在线市场代码提交为 `54abc51`，输入区面板提交为 `2c84660`；本报告的后续文档提交在其之后。
+在线市场 `54abc51`、输入区面板 `2c84660`、连接器/技能搜索/深色修复 `0db88a7`；本报告的后续文档提交在其之后。
