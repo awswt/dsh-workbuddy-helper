@@ -49,11 +49,9 @@ dsh plugin --profile <profile> add git+https://github.com/awswt/dsh-workbuddy-he
 
 **专家**：搜索 WorkBuddy 专家市场（10,000 位）与本机已装专家，按分类筛选，一键切换或移除。
 
-![会话辅助面板](docs/ui-13-assistant-panel.png)
-
 **技能**：上方搜索本机已装技能，下方是 WorkBuddy 技能市场。市场里的技能可以直接**安装到当前工作区**——点「安装」会下载技能包并解到 `<工作区>/.dsh/skills/<技能名>/`，装好的行按钮变成「重新安装」。装完不影响正在跑的会话，下一轮就能在「本机技能」里看到并开关。
 
-![技能市场](docs/ui-15-skill-market.png)
+![技能页：专家自带技能 + 本机技能](docs/ui-17-skill-markets.png)
 
 **连接器**：两部分。上半区是本机已装的连接器插件，开关只影响当前会话的工具可见性；下半区是连接器目录（134 条），支持按名称/描述搜索，需要凭据的会在行内直接收 API Key 或 Bearer Token。
 
@@ -65,11 +63,11 @@ dsh plugin --profile <profile> add git+https://github.com/awswt/dsh-workbuddy-he
 | 插件连接器 | — | 工具已由宿主注册，开关只是把当前会话的工具视图放开或收紧 |
 | 连接器管理页建立 | 连接器管理页 | 连接与 OAuth 授权都在 `dsh-mcp-connector` 的 `/mcp-connector/ui` 完成。本插件只读这份状态，按钮是「在管理页打开」，不提供会和对方打架的「断开」 |
 
-![连接器市场](docs/ui-16-armory-market.png)
+![连接器页（装有 dsh-armory 时的市场卡片）](docs/ui-16-armory-market.png)
 
 若本机装了 **dsh-armory**，连接器页会额外复用它的 `remote.mcpManager` 服务：卡片网格、详情、安装与 OAuth 授权弹层由军械库提供，凭据也由它保存。没装时用本插件自带的目录与连接流程，两者都能把工具接进当前会话。
 
-深色模式：主按钮等控件用单色反色方案，两个主题都可读。
+> 截图可能落后于当前界面（面板迭代较快），以实际界面为准；更多历史截图在 `docs/ui-*.png`。
 
 面板由同源的 `/dsh-workbuddy-helper/*` JSON 路由驱动，不额外开端口，也不会把 token 交给浏览器。
 
