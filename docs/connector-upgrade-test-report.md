@@ -266,3 +266,62 @@ node .workbuddy/probe/probe-multi.mjs
 ```
 
 注意：同一路径重装 tgz 时 pnpm 会报 `Already up to date` 并保留旧内容，必须换目录/文件名（本报告用 `pack-v2…v5` 逐版验证）。
+
+---
+
+## 8. 追加：v0.6.5 / v0.6.6 的三处优化（技能并发锁 / 管理页跳转埋点 / 一条命令复现）
+
+用户在连接器改造完成后追加了三条要求，均已落地并随版本发布。
+
+### 8.1 技能安装并发锁（`lib/skill-install.js`）
+
+问题：两次装同一个 slug 会交错 `rm(target)` 与 `rename(staging, target)`，可能留下半成品或丢掉对方的文件。面板（HTTP 路由）与 `workbuddy_helper` 工具可能来自不同进程，纯进程内队列不够。
+
+实现：`withInstallLock(lockKey, fn, { lockDir, lockTimeoutMs, lockStaleMs })` 双层：
+- 进程内 `installQueues`（Map<target, Promise>）按 target 路径串行，尾节点释放时从 Map 里删除，避免长驻进程累积；
+- 跨进程 `<skillsRoot>/.lock-<slug>` 目录互斥（`mkdir` 在 Win/macOS/Linux 上都原子失败于 EEXIST），持锁时写 `owner.json`（`{pid, at}`），`LOCK_STALE_MS = 5 分钟` 的残留锁被打破，避免崩过的进程永久挡住安装。
+
+注意：**必须先 `mkdir(skillsRoot)` 再上锁**——首次安装时 `.dsh/skills` 还不存在，`mkdir(<root>/.lock-x)` 直接 ENOENT（第一次跑 6 条单测就是这个原因）。
+
+验证：`test/skill-install.test.mjs` 21/21（新增 5 条：串行顺序、rejection 后队列可用、过期锁被打破、超时抛 `another skill install is still running`、真并发两次安装后无 `.staging-*`/`.lock-*` 残留且两份 files 都完整）。
+
+### 8.2 连接器管理页一键跳转 + 埋点（`lib/connector-flow.js` / `lib/connectors.js` / `lib/webui.js` / `lib/client.js`）
+
+先查清事实：`dsh-mcp-connector/ui/index.html` **只读** `location.search` 的 `uiLocale`（L1235）与 `locale`（L1252），`?connector=<id>` 不会被解析。所以**不做假深链**：
+
+- `connectorUiUrl({ serverName, configId, from })` 只拼可观测参数，返回相对路径（实测 `/mcp-connector/ui?serverName=amap&connector=amap&from=dsh-workbuddy-helper`）；
+- `connectorUiHint(config, state)` 生成"去管理页搜索「名字」（server: xxx）"，因为用户只能靠搜索定位；
+- 客户端按钮由裸 `<a href>` 改为 `openConnectorUi()`：先 POST `connectors/action { action: 'openConnectorUi' }`，服务端 `recordUiOpen()` 写 `store.uiOpens[configId] = { configId, serverName, sessionId, count, at }`（**本插件自己的 store，不写对方的表**），再返回 `{ url, hint, uiOpen, state }`，随后 `window.open`；
+- `state.uiOpen` 让面板显示"已去过管理页 N 次"，按钮变「再次打开管理页」。该记录**不参与** connected 判定（`bound/connected/reason` 全部不变，有测试断言）。
+
+同时修掉一个会静默丢数据的缺陷：`loadStore()` 原来只重建 `{version, configs, sessions}`，会把 `uiOpens` 丢掉——重启后埋点归零。
+
+验证：`test/connector-flow.test.mjs` 8/8（新增 2 条）、`test/connector-controller.test.mjs` 9/9（新增 1 条 `recordUiOpen persists the jump so the state shows it across restarts`，含"新建 controller 后仍读到 count 2"）。
+
+### 8.3 一条命令的端到端复现（`scripts/e2e.mjs`）
+
+`docs/e2e-baseline.md` 原来把流程写成 4 段手写 PowerShell，`E:/DSH/workspace/migrate` 硬编码在里面——人能照做，agent 不能复跑。现在收成：
+
+```powershell
+node scripts/e2e.mjs                     # 从 GitHub 装 v0.6.6，跑全套
+node scripts/e2e.mjs --source local      # 装工作树
+node scripts/e2e.mjs --plan connector-only --verbose
+```
+
+脚本自己做：隔离 `DSH_HOME` → 复制真 home 的连接器目录（**只复制 `tables.catalog.remote.connectors`，故意丢掉 `connections`/`grants`**）→ 装插件 → 用 node 写 `dsh.profile.bundles`（PS 5.1 的 `Set-Content -Encoding utf8` 会带 BOM 导致 dump-config 失败）→ `--dump-config` → 起 OpenAI 方言假模型 → 真 headless 会话 → 10 项检查 → `report.json`，退出码 0 才算通过。
+
+检查项：plugin installs / profile bundles configured / loader sees dsh-workbuddy-helper / headless runner present / headless session exits cleanly / the model was actually called / workbuddy_helper schema reaches the model / connector catalog is readable / expert persona reaches the next system prompt / skill catalog is injected。
+
+实测：
+- `--source local --plan connector-only` → **8/8 PASS**（catalogTotal 134）
+- `--source local --plan full` → **10/10 PASS**（6 requests，expert=程枢，5 requests carry skill catalog）
+- `--source github --plan full` → **10/10 PASS**（装到 v0.6.5，随后发布 v0.6.6）
+
+脚本自身修掉的两个缺陷：① 最初 `checks.pass('plugin installs', …) && null` 在判断 exit code 之前就记了 PASS；② `dsh plugin add` 即使 pnpm 成功、只要往 stderr 写了 "initialized profile …" 也会返回非 0，用 exit code 判成败会假阴性——现在以磁盘上 `node_modules/dsh-workbuddy-helper/package.json` 的版本为准。
+
+### 8.4 发布记录
+
+| 版本 | commit | 内容 |
+|---|---|---|
+| 0.6.5 | `42b0360` | 技能并发锁 + 管理页跳转埋点 + `scripts/e2e.mjs`；测试 100/100 |
+| 0.6.6 | `61f73a6` | e2e 以装到磁盘的包判成败，网络失败给出可行动提示 |
