@@ -76,7 +76,7 @@ dsh plugin --profile <profile> add git+https://github.com/awswt/dsh-workbuddy-he
 
 **账号**：本插件自己的 WorkBuddy 登录（见「WorkBuddy 账号接入」）。选国内版/国际版 → 开始登录 → 扫码 → 我已完成；下半部分只读列出 `dsh-connect-workbuddy` 的旧账号，可一键导入。
 
-同一个登录界面也在 **设置 → WorkBuddy 登录** 里（左侧导航，排在「插件」之后）。面板里的那个是按会话的顺手入口；设置里那一页与账号是否可用强相关——它读的是整台机器的账号库，不依赖你当前开没开会话。
+同一个登录界面也在 **设置 → workbuddy-helper** 里（左侧导航，排在「插件」之后）。面板里的那个是按会话的顺手入口；设置里那一页与账号是否可用强相关——它读的是整台机器的账号库，不依赖你当前开没开会话。
 
 > 截图可能落后于当前界面（面板迭代较快），以实际界面为准；更多历史截图在 `docs/ui-*.png`。
 
@@ -194,7 +194,7 @@ WorkBuddy 有两条完全不同的数据源，条数差异很大：
 
 **本插件自己完成登录**，不需要装 `dsh-connect-workbuddy`，也不需要 WorkBuddy 桌面端。
 
-两个地方都能登录：**设置 → WorkBuddy 登录**（推荐，整台机器的事），或会话输入框旁的「会话辅助」面板 → **账号**页签（随手用）。
+两个地方都能登录：**设置 → workbuddy-helper**（推荐，整台机器的事），或会话输入框旁的「会话辅助」面板 → **账号**页签（随手用）。
 
 1. 选站点——`国内版`（`www.codebuddy.cn`）或 `国际版`（`www.workbuddy.ai`）。这两个是独立的账号体系，一个域名签发的 token 会被另一个域名的网关拒绝，所以要选你真正在用的那个。
 2. 点「开始登录」，浏览器会打开一个扫码页。
@@ -329,11 +329,14 @@ $DSH_HOME/workbuddy-helper/
 检查是不是装到了项目根之外。技能加载器只扫 `<projectRoot>/.dsh/skills`。
 
 **技能市场显示「未检测到 WorkBuddy 登录态」**
-去 **设置 → WorkBuddy 登录**（或面板的**账号**页签）登录一次即可。本插件自己登录、自己存 token，不需要装 `dsh-connect-workbuddy`。
+去 **设置 → workbuddy-helper**（或面板的**账号**页签）登录一次即可。本插件自己登录、自己存 token，不需要装 `dsh-connect-workbuddy`。
 以前装过那个插件的话，也可以直接在同一个页面点「全部导入本插件」。
 
-**设置里找不到「WorkBuddy 登录」**
+**设置里找不到「workbuddy-helper」**
 那一页由插件在激活时注册到宿主的 `settings.section`，改完插件代码必须**完全退出 DSH 再启动**（关窗口不算）。若已经重启还是没有，看一下 Cordis 插件面板里 `dsh-workbuddy-helper` 是否报 render failure——注册失败只会在 console 留一行 `settings section registration failed`，不会挡住别的功能，面板里的「会话辅助」按钮照常可用。
+
+**会话辅助按钮点过一次就不见了**
+v0.8.5 修好了。原因是弹窗里有个条件 return 排在 hook 前面，点开那一刻 React 报 "Rendered more hooks than during the previous render"，而宿主对 `conversation.input.left` 这种非 chain 槽位的处理是把**整个 entry 退役**——按钮和弹窗共用一个 entry，于是按钮陪葬，只有重启 DSH 才回来。现在早退挪到了所有 hook 之后，弹窗也自带错误边界：以后弹窗真崩了只会丢弹窗，按钮留在原地。升级到 v0.8.5 并**完全退出 DSH 再启动**即可。
 
 **专家市场只有 429 条**
 那是公开快照，没有登录态时的兜底。登录 WorkBuddy 就能拿到 10,000 条在线市场。

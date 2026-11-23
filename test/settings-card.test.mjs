@@ -112,7 +112,7 @@ test('apply registers one settings page plus its nav icon under the same id', as
   assert.equal(section.id, 'workbuddy-helper-account')
   assert.equal(typeof section.component, 'function')
   assert.equal(typeof icon.component, 'function')
-  assert.equal(section.label, 'WorkBuddy 登录')
+  assert.equal(section.label, 'workbuddy-helper')
 
   // 用的是插件自己的 id：借用官方 id 会顶掉那一页。
   const shipped = ['models', 'plugins', 'account', 'agent-presets', 'general']

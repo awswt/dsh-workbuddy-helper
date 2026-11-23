@@ -136,7 +136,7 @@ scripts/spawn-util.mjs 子进程封装（捕获两路、只写 stdout）与 TAP 
 
 ## 4.4 设置页那一页（`lib/client.js` 的 `SettingsAccountCard`）
 
-登录入口在**设置 → WorkBuddy 登录**（`settings.section` + `settings.section.icon`，两条注册 id 都是
+登录入口在**设置 → workbuddy-helper**（`settings.section` + `settings.section.icon`，两条注册 id 都是
 `workbuddy-helper-account`、order `25`）。为什么不是只靠 composer 的 pill：pill 是**按会话**的便利，
 账号是**整台机器**的事实——没开会话、pill 被别的插件挤掉时，用户仍得能找到登录。
 
@@ -152,7 +152,7 @@ scripts/spawn-util.mjs 子进程封装（捕获两路、只写 stdout）与 TAP 
 ## 5. 验证
 
 ```powershell
-node --test test/*.test.mjs          # 222 条，必须全绿
+node --test test/*.test.mjs          # 226 条，必须全绿
 node --check lib/<file>.js           # 改完随手检
 node scripts/normalize-eol.mjs       # 体检工作区换行；--write 才落盘
 ```
@@ -221,6 +221,8 @@ node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin
 25. `11217 login ing...` 是 HTTP **200**，代表"还没扫码"，**不是错误**；未知 state 也回 11217，所以本地不能靠它判断 state 是否还有效，只能用自己的 TTL。真正的终止码是 `12153` / `12151` / `40001` / `41001`。另外 `/v2/plugin/login/account` 对任何凭据都回 `12151` 空 data，**只能当回退**——先问它会把每个账号算成"未命名"。
 26. `WorkBuddyConnector` 里存账号库的字段叫 **`this.store`**，不能叫 `this.accounts`：`accounts()` 是方法名，同名字段会把它整个遮住，症状是 `connector.accounts is not a function`。同理 `createAccountService().list().summary.dir` 要读 `connector.store.root`，**不能**读 `status.own.dir`（那是 `mask()` 过的给模型看的一行摘要，`C:\Users…\own` 点不开）。
 27. `lib/wb-vault.js` 的目录锁名是 `<region>-<hash(uid)>`，不是 `<region>-<uid>`。写测试造残留锁时必须算 `accountIdOf(uid)`，否则"该抛却不抛"，你会以为是锁失效了。
+
+28. **条件 return 不能站在 hook 前面**，在这里代价格外大。`PickerDialog` 曾经把 `if (!props.open) return null` 写在账号区两个 hook 之前（v0.8.0-v0.8.4），症状不是"弹窗坏掉"而是"**点一次会话辅助按钮，按钮从此消失，重启 DSH 才回来**"：关闭态只跑到第 82 个 hook，点开那一帧忽然多跑 2 个，React 抛 *Rendered more hooks than during the previous render*；`@deepseek-ai/dsh-client-ui-renderer` 的 `SlotErrorBoundary` 捕获后，因为 `conversation.input.left` 是 `kind:'list'`（非 chain）就把**整个 entry** `abdicate` 掉——pill 与弹窗共用一个 entry，于是 pill 陪葬。两条修法都上了：①早退挪到最后一行 hook 之后；②弹窗只在 `open` 时挂载并包进自带的 `DialogBoundary`，崩了只丢弹窗。`test/hook-order.test.mjs` 静态扫描所有组件（不依赖模拟 React 调度），改 `client.js` 后必须绿。
 
 ## 8. 边界
 
