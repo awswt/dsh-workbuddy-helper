@@ -152,7 +152,7 @@ scripts/spawn-util.mjs 子进程封装（捕获两路、只写 stdout）与 TAP 
 ## 5. 验证
 
 ```powershell
-node --test test/*.test.mjs          # 220 条，必须全绿
+node --test test/*.test.mjs          # 222 条，必须全绿
 node --check lib/<file>.js           # 改完随手检
 node scripts/normalize-eol.mjs       # 体检工作区换行；--write 才落盘
 ```
@@ -190,7 +190,7 @@ node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin
 - 判断发布成功看 `released vX.Y.Z` 与 `git rev-list --left-right --count origin/main...HEAD` = `0 0`，别只信退出码（反过来也成立：退出码 0 不代表推上去了，看 git）。
 - 版本号是唯一可信的"这份代码是新的"标志，但它**不等于内容**：同版本号的 tgz 与 git 提交可能不同（历史上 0.5.0 就出现过 14165B vs 13793B），所以验证装进去的东西要 grep 特征串，别只看 version。
 - `.gitignore` 必须挡住 `app-64.7z`（441MB 安装器）、`.workbuddy/`（逆向与探针产物）、`.dsh/`（装进来的技能）。
-- 每次提交git,在docs\releases 目录下记录每次修改迭代的版本的新增功能以及修复的问题作为版本日志
+- 每次提交git,在docs\releases 目录下记录每次修改迭代的版本的新增功能以及修复的问题作为版本日志。写的时候用 `-w` 逐条传（可重复），脚本会渲染成「本次新增与修复」一节：`node scripts/release.mjs -m "feat: x" -w "新增：…" -w "修复：…"`。只靠 `-m` 那句话不够——它回答不了"这版多了什么"。
 ## 7. 陷阱清单（都是真踩过的）
 
 1. 宿主 `@deepseek-ai/dsh-tools` 的 Tools 类**没有** `definitions()`。枚举工具用 `schemas()`（省略 scope = 全局视图，返回带 `name` 的模型侧 schema）。早期版本靠 `definitions()` 导致 `toolCount` 恒 0、连接器永远显示"未连接"。

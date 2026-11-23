@@ -38,6 +38,26 @@
 
 > 0.6.7 那次复跑时，GitHub 上的包还是 0.6.7 之前的提交，所以 schema 里**没有** `force`；0.6.8 发布后复跑，`force` 才随包下发（第 5 行即 0.6.8 的实测）。这条差异本身是"版本号 ≠ 内容"的又一例证。
 
+### 0.2 v0.8.0 → v0.8.1 复测（设置页登录入口那一版）
+
+`node scripts/e2e.mjs --source local --plan connector-only`，`EXIT=0`，9 项全绿。这一版只改了浏览器半侧
+（新增 `SettingsAccountCard` 与 `settings.section` / `settings.section.icon` 两条注册）加文档，所以看的是"没弄坏东西"：
+
+| # | 链路 | 判定 | 一句话依据 |
+|---|------|------|-----------|
+| 1 | 本地装包（工作树） | **PASS** | `plugin installs — v0.8.1 on disk (cli exit 0)` |
+| 2 | profile bundles | **PASS** | `@deepseek-ai/dsh-base, @deepseek-ai/dsh-headless, dsh-workbuddy-helper` |
+| 3 | 已装包的桥接回归 | **PASS** | `14 passed, 0 failed against …\node_modules\dsh-workbuddy-helper\lib` |
+| 4 | loader 可见性 | **PASS** | `loader sees dsh-workbuddy-helper` |
+| 5 | headless 运行器 | **PASS** | `headless runner present` |
+| 6 | 会话 | **PASS** | `headless session exits cleanly`、`the model was actually called — 3 requests` |
+| 7 | 工具 schema | **PASS** | `action|skillAction|skillId|force|page|pageSize|expertId|connectorAction|connectorId|accountAction|accountId|loginId|region|token|query|mode|names|expertNames` |
+| 8 | 连接器目录 | **PASS** | `connector catalog is readable — 136 connectors`（隔离 home 从真 home 复制，比 134 多两条本机已装） |
+
+`connector-only` 不含专家/技能段，所以这里没有 0.1 表的第 6/7 行；这两条在 `--plan full` 里，最近一次全绿是
+v0.6.16（`11/11`）。**e2e 看不见设置页**——它是浏览器半侧的 slot 注册，脚本里没有 GUI。那一层由
+`test/settings-card.test.mjs`（4 条，静态断言三条注册与 id 配对）与肉眼重启验证覆盖。
+
 ## 1. 环境与版本
 
 | 项 | 值 |

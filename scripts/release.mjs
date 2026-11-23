@@ -8,7 +8,7 @@
  *   node scripts/release.mjs --dry-run        # 只打印将要发生什么
  *   node scripts/release.mjs --no-push        # 本地提交 + 打 tag，不推
  *   node scripts/release.mjs --no-artifacts   # 跳过 npm pack（离线/调试）
- *   node scripts/release.mjs -m "feat: xxx"
+ *   node scripts/release.mjs -m "feat: xxx" -w "新增：设置页登录入口" -w "修复：xxx"
  *
  * 流程：测试 → bump → **构建 release 产物** → commit → tag → push → 打印 release 信息。
  *
@@ -38,7 +38,7 @@ const notesDir = path.join(root, 'docs', 'releases')
 const run = createRunner(root)
 
 function parseArgs(argv) {
-  const options = { bump: 'patch', dryRun: false, push: true, artifacts: true, message: null }
+  const options = { bump: 'patch', dryRun: false, push: true, artifacts: true, message: null, what: [] }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--dry-run') options.dryRun = true
@@ -49,6 +49,11 @@ function parseArgs(argv) {
     else if (arg === '--patch') options.bump = 'patch'
     else if (arg === '-m' || arg === '--message') {
       options.message = argv[index + 1] ?? null
+      index += 1
+    } else if (arg === '-w' || arg === '--what') {
+      const line = argv[index + 1]
+      if (line === undefined || line === '') throw new Error('--what needs a line of text')
+      options.what.push(line)
       index += 1
     } else if (arg === '-h' || arg === '--help') {
       options.help = true
@@ -119,7 +124,7 @@ async function packTarball(version, outDir) {
   return { file, name: path.basename(file), bytes: info.size, sha256: digest }
 }
 
-function renderNotes({ version, previous, artifact, testCount, testFilesCount, commits, changes, message }) {
+function renderNotes({ version, previous, artifact, testCount, testFilesCount, commits, changes, message, what }) {
   const lines = []
   lines.push(`# v${version}`)
   lines.push('')
@@ -128,6 +133,15 @@ function renderNotes({ version, previous, artifact, testCount, testFilesCount, c
   lines.push(`- 提交说明：${message}`)
   lines.push(`- 测试：${testCount ?? '?'} 条通过（${testFilesCount} 个测试文件）`)
   lines.push('')
+  // 变更日志的正文。提交说明是一句话，版本日志要能回答"这版多了什么、修了什么"——
+  // 所以允许 --what 逐条传，每条写一行；没传就退化成从 changes 里能看出的东西。
+  const entries = Array.isArray(what) ? what.filter(line => typeof line === 'string' && line.trim() !== '') : []
+  if (entries.length > 0) {
+    lines.push('## 本次新增与修复')
+    lines.push('')
+    for (const line of entries) lines.push(`- ${line}`)
+    lines.push('')
+  }
   if (artifact !== null) {
     lines.push('## 安装包')
     lines.push('')
@@ -164,7 +178,7 @@ function renderNotes({ version, previous, artifact, testCount, testFilesCount, c
 async function main() {
   const options = parseArgs(process.argv.slice(2))
   if (options.help === true) {
-    console.log('usage: node scripts/release.mjs [--patch|--minor|--major] [--dry-run] [--no-push] [--no-artifacts] [-m message]')
+    console.log('usage: node scripts/release.mjs [--patch|--minor|--major] [--dry-run] [--no-push] [--no-artifacts] [-m message] [-w "one change line" ...]')
     return
   }
 
@@ -211,7 +225,7 @@ async function main() {
 
   const notes = renderNotes({
     version: nextVersion, previous, artifact, testCount,
-    testFilesCount: files.length, commits, changes, message,
+    testFilesCount: files.length, commits, changes, message, what: options.what,
   })
   await mkdir(notesDir, { recursive: true })
   const notesPath = path.join(notesDir, `${tag}.md`)

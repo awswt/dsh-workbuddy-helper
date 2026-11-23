@@ -76,16 +76,26 @@ test('bumpVersion walks patch, minor and major without inventing a prerelease', 
 
 test('parseArgs defaults to a patch release that pushes', () => {
   // artifacts 默认 true：用户明确要求"推 git 时要构建 release 版本，而不是只打 tag"。
-  assert.deepEqual(parseArgs([]), { bump: 'patch', dryRun: false, push: true, artifacts: true, message: null })
+  assert.deepEqual(parseArgs([]), { bump: 'patch', dryRun: false, push: true, artifacts: true, message: null, what: [] })
   assert.deepEqual(parseArgs(['--minor', '--dry-run', '--no-push', '-m', 'feat: x']), {
     bump: 'minor',
     dryRun: true,
     push: false,
     artifacts: true,
     message: 'feat: x',
+    what: [],
   })
   assert.equal(parseArgs(['--no-artifacts']).artifacts, false)
   assert.throws(() => parseArgs(['--nope']), /unknown argument: --nope/)
+})
+
+test('parseArgs collects repeated --what lines for the release log', () => {
+  // 用户要求"每次提交在 docs/releases 记录新增功能与修复"：提交说明只有一句话，
+  // 版本日志得能把改动逐条列出来，所以 --what 允许重复。
+  const options = parseArgs(['-w', '新增：设置页登录入口', '--what', '修复：面板里的 Object 占位'])
+  assert.deepEqual(options.what, ['新增：设置页登录入口', '修复：面板里的 Object 占位'])
+  assert.equal(options.message, null)
+  assert.throws(() => parseArgs(['--what']), /--what needs a line of text/)
 })
 
 test('renderNotes always carries the version, the test count and the tarball digest', () => {
@@ -108,6 +118,25 @@ test('renderNotes always carries the version, the test count and the tarball dig
   assert.match(notes, /dsh plugin --profile <profile> add \/absolute\/path\/to\/dsh-workbuddy-helper-0\.7\.0\.tgz/)
   assert.match(notes, /M lib\/wb-login\.js/)
   assert.match(notes, /abc1234 feat: sign in without dsh-connect-workbuddy/)
+  // 没传 --what 时不该凭空造一节空的「本次改动」。
+  assert.doesNotMatch(notes, /## 本次新增与修复/)
+})
+
+test('renderNotes lists each --what line under its own heading', () => {
+  const notes = renderNotes({
+    version: '0.9.0',
+    previous: 'v0.8.1',
+    artifact: null,
+    testCount: 220,
+    testFilesCount: 21,
+    commits: [],
+    changes: [],
+    message: 'feat: x',
+    what: ['新增：设置页登录入口', '修复：release 脚本不再吞子进程 stderr', '  '],
+  })
+  assert.match(notes, /## 本次新增与修复\n\n- 新增：设置页登录入口\n- 修复：release 脚本不再吞子进程 stderr\n/)
+  // 空白行被丢掉，不会变成一条空 bullet。
+  assert.doesNotMatch(notes, /^- *$/m)
 })
 
 test('renderNotes degrades cleanly when there is no artifact and no previous tag', () => {
