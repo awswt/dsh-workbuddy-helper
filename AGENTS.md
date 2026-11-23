@@ -134,10 +134,25 @@ scripts/spawn-util.mjs 子进程封装（捕获两路、只写 stdout）与 TAP 
 **落盘在服务层**：`createAccountService().poll()` 成功那一刻就 `saveAccount()`，写盘失败返回
 `signed in, but the account could not be stored: …`。面板 / 工具 / 斜杠命令三条入口共享这一份逻辑。
 
+## 4.4 设置页那一页（`lib/client.js` 的 `SettingsAccountCard`）
+
+登录入口在**设置 → WorkBuddy 登录**（`settings.section` + `settings.section.icon`，两条注册 id 都是
+`workbuddy-helper-account`、order `25`）。为什么不是只靠 composer 的 pill：pill 是**按会话**的便利，
+账号是**整台机器**的事实——没开会话、pill 被别的插件挤掉时，用户仍得能找到登录。
+
+改这里必须知道的四件事：
+
+- **两条注册的 id 必须相同**。宿主按 id 把图标配给页，对不上的图标**永远不渲染而且不报错**（契约原文
+  「unmatched ids never render」）。`test/settings-card.test.mjs` 第一条就守这个。
+- **id 不能借用官方的**（`models` / `plugins` / `account` / `agent-presets` / `general`）——契约里写着借用会顶掉那一格。
+- **两个槽位各自 try/catch**，且与 composer 的注册互不牵连。老宿主没有 `settings.*` 时 pill 必须照常出现；
+  失败只 `console.error` 留一行，不向宿主抛。
+- 页面的 props 只有 `{ close }`（shell 拥有开关状态），图标拿到的是 `{ size, active }`。别去读别的东西。
+
 ## 5. 验证
 
 ```powershell
-node --test test/*.test.mjs          # 216 条，必须全绿
+node --test test/*.test.mjs          # 220 条，必须全绿
 node --check lib/<file>.js           # 改完随手检
 node scripts/normalize-eol.mjs       # 体检工作区换行；--write 才落盘
 ```
@@ -175,7 +190,7 @@ node "C:\Users\Administrator\.dsh\profiles\node_modules\@deepseek-ai\dsh\lib\bin
 - 判断发布成功看 `released vX.Y.Z` 与 `git rev-list --left-right --count origin/main...HEAD` = `0 0`，别只信退出码（反过来也成立：退出码 0 不代表推上去了，看 git）。
 - 版本号是唯一可信的"这份代码是新的"标志，但它**不等于内容**：同版本号的 tgz 与 git 提交可能不同（历史上 0.5.0 就出现过 14165B vs 13793B），所以验证装进去的东西要 grep 特征串，别只看 version。
 - `.gitignore` 必须挡住 `app-64.7z`（441MB 安装器）、`.workbuddy/`（逆向与探针产物）、`.dsh/`（装进来的技能）。
-
+- 每次提交git,在docs\releases 目录下记录每次修改迭代的版本的新增功能以及修复的问题作为版本日志
 ## 7. 陷阱清单（都是真踩过的）
 
 1. 宿主 `@deepseek-ai/dsh-tools` 的 Tools 类**没有** `definitions()`。枚举工具用 `schemas()`（省略 scope = 全局视图，返回带 `name` 的模型侧 schema）。早期版本靠 `definitions()` 导致 `toolCount` 恒 0、连接器永远显示"未连接"。
