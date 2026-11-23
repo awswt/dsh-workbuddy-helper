@@ -336,7 +336,7 @@ $DSH_HOME/workbuddy-helper/
 那一页由插件在激活时注册到宿主的 `settings.section`，改完插件代码必须**完全退出 DSH 再启动**（关窗口不算）。若已经重启还是没有，看一下 Cordis 插件面板里 `dsh-workbuddy-helper` 是否报 render failure——注册失败只会在 console 留一行 `settings section registration failed`，不会挡住别的功能，面板里的「会话辅助」按钮照常可用。
 
 **会话辅助按钮点过一次就不见了**
-v0.8.5 修好了。原因是弹窗里有个条件 return 排在 hook 前面，点开那一刻 React 报 "Rendered more hooks than during the previous render"，而宿主对 `conversation.input.left` 这种非 chain 槽位的处理是把**整个 entry 退役**——按钮和弹窗共用一个 entry，于是按钮陪葬，只有重启 DSH 才回来。现在早退挪到了所有 hook 之后，弹窗也自带错误边界：以后弹窗真崩了只会丢弹窗，按钮留在原地。升级到 v0.8.5 并**完全退出 DSH 再启动**即可。
+v0.8.3 修好了。原因是弹窗里有个条件 return 排在 hook 前面，点开那一刻 React 报 "Rendered more hooks than during the previous render"，而宿主对 `conversation.input.left` 这种非 chain 槽位的处理是把**整个 entry 退役**——按钮和弹窗共用一个 entry，于是按钮陪葬，只有重启 DSH 才回来。现在早退挪到了所有 hook 之后，弹窗也自带错误边界：以后弹窗真崩了只会丢弹窗，按钮留在原地。升级到 v0.8.3 并**完全退出 DSH 再启动**即可。
 
 **专家市场只有 429 条**
 那是公开快照，没有登录态时的兜底。登录 WorkBuddy 就能拿到 10,000 条在线市场。
